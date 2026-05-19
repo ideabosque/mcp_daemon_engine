@@ -1,0 +1,34 @@
+[project]
+name = "mcp-daemon-engine"
+version = "0.0.1"
+description = "MCP Daemon CLI for SSE or stdio transport"
+authors = [{name = "Idea Bosque"}]
+dependencies = [
+  "mcp",  # assuming your module is published or locally linkable,
+  "fastapi[all]",
+  "uvicorn[standard]",
+  "python-jose[cryptography]",
+  "httpx[http2]",
+  "bcrypt",
+  "passlib[bcrypt]",
+  "graphene",
+  "python-dotenv",
+  "pendulum",
+  "SilvaEngine-DynamoDB-Base",
+  "SilvaEngine-Utility",
+]
+
+[project.scripts]
+mcp-daemon = "mcp_daemon_engine.main:main"
+
+[project.optional-dependencies]
+dev = [
+  "ruff",
+]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+reportCallIssue = "none"
+reportArgumentType = "none"
+reportOptionalMemberAccess = "none"
+reportAttributeAccessIssue = "none"

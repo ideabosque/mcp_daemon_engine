@@ -1,0 +1,844 @@
+{
+  "info": {
+    "name": "MCP Daemon Engine GraphQL API",
+    "description": "Complete collection of GraphQL queries and mutations for the MCP Daemon Engine. This collection includes all CRUD operations for managing MCP functions, modules, settings, function calls, and configuration loading.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "mcp-daemon-engine-collection",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "api_url",
+      "value": "https://your-api-domain.com",
+      "type": "string"
+    },
+    {
+      "key": "area",
+      "value": "core",
+      "type": "string"
+    },
+    {
+      "key": "endpoint_id",
+      "value": "your-endpoint-id",
+      "type": "string"
+    },
+    {
+      "key": "funct",
+      "value": "mcp_core_graphql",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "your-api-key-here",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Ping",
+      "item": [
+        {
+          "name": "Ping",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query {\n  ping\n}",
+                "variables": ""
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Simple ping query to test API connectivity. Returns a greeting with current time."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP Function",
+      "item": [
+        {
+          "name": "Insert/Update MCP Function",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateMcpFunction(\n  $name: String!\n  $mcpType: String!\n  $description: String\n  $data: JSON\n  $annotations: String\n  $moduleName: String\n  $className: String\n  $functionName: String\n  $returnType: String\n  $isAsync: Boolean\n  $updatedBy: String!\n) {\n  insertUpdateMcpFunction(\n    name: $name\n    mcpType: $mcpType\n    description: $description\n    data: $data\n    annotations: $annotations\n    moduleName: $moduleName\n    className: $className\n    functionName: $functionName\n    returnType: $returnType\n    isAsync: $isAsync\n    updatedBy: $updatedBy\n  ) {\n    mcpFunction {\n      endpointId\n      name\n      mcpType\n      description\n      data\n      annotations\n      moduleName\n      className\n      functionName\n      returnType\n      isAsync\n      updatedBy\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"name\": \"fetch_data\",\n  \"mcpType\": \"tool\",\n  \"description\": \"Fetch data from external source\",\n  \"data\": {\"endpoint\": \"https://api.example.com\"},\n  \"annotations\": \"@tool\",\n  \"moduleName\": \"data_fetcher\",\n  \"className\": \"DataFetcher\",\n  \"functionName\": \"fetch\",\n  \"returnType\": \"dict\",\n  \"isAsync\": true,\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Create or update an MCP function. This registers a new function or updates existing one with metadata."
+          },
+          "response": []
+        },
+        {
+          "name": "Get MCP Function",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetMcpFunction($name: String!) {\n  mcpFunction(name: $name) {\n    endpointId\n    name\n    mcpType\n    description\n    data\n    annotations\n    moduleName\n    className\n    functionName\n    returnType\n    isAsync\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"name\": \"fetch_data\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific MCP function by name"
+          },
+          "response": []
+        },
+        {
+          "name": "List MCP Functions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query ListMcpFunctions(\n  $pageNumber: Int\n  $limit: Int\n  $mcpType: String\n  $moduleName: String\n  $className: String\n  $functionName: String\n) {\n  mcpFunctionList(\n    pageNumber: $pageNumber\n    limit: $limit\n    mcpType: $mcpType\n    moduleName: $moduleName\n    className: $className\n    functionName: $functionName\n  ) {\n    mcpFunctionList {\n      endpointId\n      name\n      mcpType\n      description\n      data\n      annotations\n      moduleName\n      className\n      functionName\n      returnType\n      isAsync\n      updatedBy\n      createdAt\n      updatedAt\n    }\n    pageSize\n    pageNumber\n    total\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 0,\n  \"limit\": 10,\n  \"mcpType\": \"tool\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List MCP functions with optional filters"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete MCP Function",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteMcpFunction($name: String!) {\n  deleteMcpFunction(name: $name) {\n    ok\n  }\n}",
+                "variables": "{\n  \"name\": \"fetch_data\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete an MCP function by name"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP Function Call",
+      "item": [
+        {
+          "name": "Insert/Update MCP Function Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateMcpFunctionCall(\n  $mcpFunctionCallUuid: String\n  $name: String\n  $mcpType: String\n  $arguments: JSON\n  $contentInS3: Boolean\n  $status: String\n  $notes: String\n  $timeSpent: Int\n  $updatedBy: String!\n) {\n  insertUpdateMcpFunctionCall(\n    mcpFunctionCallUuid: $mcpFunctionCallUuid\n    name: $name\n    mcpType: $mcpType\n    arguments: $arguments\n    contentInS3: $contentInS3\n    status: $status\n    notes: $notes\n    timeSpent: $timeSpent\n    updatedBy: $updatedBy\n  ) {\n    mcpFunctionCall {\n      endpointId\n      mcpFunctionCallUuid\n      mcpType\n      name\n      arguments\n      content\n      status\n      notes\n      timeSpent\n      updatedBy\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"mcpFunctionCallUuid\": \"12345678901234567890\",\n  \"name\": \"fetch_data\",\n  \"mcpType\": \"tool\",\n  \"arguments\": {\"url\": \"https://api.example.com/data\", \"method\": \"GET\"},\n  \"contentInS3\": true,\n  \"status\": \"completed\",\n  \"notes\": \"Successfully fetched data\",\n  \"timeSpent\": 1500,\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Create or update an MCP function call record. Tracks execution of MCP functions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get MCP Function Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetMcpFunctionCall($mcpFunctionCallUuid: String!) {\n  mcpFunctionCall(mcpFunctionCallUuid: $mcpFunctionCallUuid) {\n    endpointId\n    mcpFunctionCallUuid\n    mcpType\n    name\n    arguments\n    content\n    status\n    notes\n    timeSpent\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"mcpFunctionCallUuid\": \"12345678901234567890\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific MCP function call by UUID"
+          },
+          "response": []
+        },
+        {
+          "name": "List MCP Function Calls",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query ListMcpFunctionCalls(\n  $pageNumber: Int\n  $limit: Int\n  $mcpType: String\n  $name: String\n  $status: String\n) {\n  mcpFunctionCallList(\n    pageNumber: $pageNumber\n    limit: $limit\n    mcpType: $mcpType\n    name: $name\n    status: $status\n  ) {\n    mcpFunctionCallList {\n      endpointId\n      mcpFunctionCallUuid\n      mcpType\n      name\n      arguments\n      content\n      status\n      notes\n      timeSpent\n      updatedBy\n      createdAt\n      updatedAt\n    }\n    pageSize\n    pageNumber\n    total\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 0,\n  \"limit\": 10,\n  \"status\": \"completed\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List MCP function calls with optional filters"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete MCP Function Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteMcpFunctionCall($mcpFunctionCallUuid: String!) {\n  deleteMcpFunctionCall(mcpFunctionCallUuid: $mcpFunctionCallUuid) {\n    ok\n  }\n}",
+                "variables": "{\n  \"mcpFunctionCallUuid\": \"12345678901234567890\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete an MCP function call record by UUID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP Module",
+      "item": [
+        {
+          "name": "Insert/Update MCP Module",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateMcpModule(\n  $moduleName: String!\n  $packageName: String!\n  $classes: [JSON]\n  $source: String\n  $updatedBy: String!\n) {\n  insertUpdateMcpModule(\n    moduleName: $moduleName\n    packageName: $packageName\n    classes: $classes\n    source: $source\n    updatedBy: $updatedBy\n  ) {\n    mcpModule {\n      endpointId\n      moduleName\n      packageName\n      classes\n      source\n      updatedBy\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"moduleName\": \"data_fetcher\",\n  \"packageName\": \"mcp_tools\",\n  \"classes\": [{\"name\": \"DataFetcher\", \"methods\": [\"fetch\", \"parse\"]}, {\"name\": \"DataParser\", \"methods\": [\"parse_json\", \"parse_xml\"]}],\n  \"source\": \"https://github.com/example/mcp-tools\",\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Create or update an MCP module. Modules contain classes and functions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get MCP Module",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetMcpModule($moduleName: String!) {\n  mcpModule(moduleName: $moduleName) {\n    endpointId\n    moduleName\n    packageName\n    classes\n    source\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"moduleName\": \"data_fetcher\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific MCP module by name"
+          },
+          "response": []
+        },
+        {
+          "name": "List MCP Modules",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query ListMcpModules(\n  $pageNumber: Int\n  $limit: Int\n  $mcpType: String\n  $description: String\n  $moduleName: String\n  $className: String\n  $functionName: String\n) {\n  mcpModuleList(\n    pageNumber: $pageNumber\n    limit: $limit\n    mcpType: $mcpType\n    description: $description\n    moduleName: $moduleName\n    className: $className\n    functionName: $functionName\n  ) {\n    mcpModuleList {\n      endpointId\n      moduleName\n      packageName\n      classes\n      source\n      updatedBy\n      createdAt\n      updatedAt\n    }\n    pageSize\n    pageNumber\n    total\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 0,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List MCP modules with optional filters"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete MCP Module",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteMcpModule($moduleName: String!) {\n  deleteMcpModule(moduleName: $moduleName) {\n    ok\n  }\n}",
+                "variables": "{\n  \"moduleName\": \"data_fetcher\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete an MCP module by name"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP Setting",
+      "item": [
+        {
+          "name": "Insert/Update MCP Setting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation InsertUpdateMcpSetting(\n  $settingId: String\n  $setting: JSON\n  $updatedBy: String!\n) {\n  insertUpdateMcpSetting(\n    settingId: $settingId\n    setting: $setting\n    updatedBy: $updatedBy\n  ) {\n    mcpSetting {\n      endpointId\n      settingId\n      setting\n      updatedBy\n      createdAt\n      updatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"settingId\": \"api_config\",\n  \"setting\": {\n    \"timeout\": 30,\n    \"retries\": 3,\n    \"baseUrl\": \"https://api.example.com\"\n  },\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Create or update an MCP setting. Settings store configuration data."
+          },
+          "response": []
+        },
+        {
+          "name": "Get MCP Setting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetMcpSetting($settingId: String!) {\n  mcpSetting(settingId: $settingId) {\n    endpointId\n    settingId\n    setting\n    updatedBy\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"settingId\": \"api_config\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Get a specific MCP setting by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "List MCP Settings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query ListMcpSettings(\n  $pageNumber: Int\n  $limit: Int\n  $settingId: String\n) {\n  mcpSettingList(\n    pageNumber: $pageNumber\n    limit: $limit\n    settingId: $settingId\n  ) {\n    mcpSettingList {\n      endpointId\n      settingId\n      setting\n      updatedBy\n      createdAt\n      updatedAt\n    }\n    pageSize\n    pageNumber\n    total\n  }\n}",
+                "variables": "{\n  \"pageNumber\": 0,\n  \"limit\": 10\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "List MCP settings with optional filters"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete MCP Setting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation DeleteMcpSetting($settingId: String!) {\n  deleteMcpSetting(settingId: $settingId) {\n    ok\n  }\n}",
+                "variables": "{\n  \"settingId\": \"api_config\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Delete an MCP setting by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP Configuration",
+      "item": [
+        {
+          "name": "Load MCP Configuration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{api_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Part-ID",
+                "value": "{{part_id}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation LoadMcpConfiguration(\n  $packageName: String\n  $moduleName: String\n  $source: String\n  $mcpConfiguration: JSON\n  $variables: JSON\n  $updatedBy: String!\n) {\n  loadMcpConfiguration(\n    packageName: $packageName\n    moduleName: $moduleName\n    source: $source\n    mcpConfiguration: $mcpConfiguration\n    variables: $variables\n    updatedBy: $updatedBy\n  ) {\n    ok\n    message\n  }\n}",
+                "variables": "{\n  \"packageName\": \"mcp_tools\",\n  \"moduleName\": \"data_fetcher\",\n  \"source\": \"https://github.com/example/mcp-tools\",\n  \"mcpConfiguration\": {\n    \"tools\": [\n      {\n        \"name\": \"fetch_data\",\n        \"description\": \"Fetch data from API\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"url\": {\"type\": \"string\"},\n            \"method\": {\"type\": \"string\"}\n          }\n        }\n      }\n    ],\n    \"resources\": [],\n    \"prompts\": []\n  },\n  \"variables\": {\n    \"api_key\": \"${API_KEY}\",\n    \"base_url\": \"https://api.example.com\"\n  },\n  \"updatedBy\": \"admin\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{api_url}}/{{area}}/{{endpoint_id}}/{{funct}}",
+              "host": [
+                "{{api_url}}"
+              ],
+              "path": [
+                "{{area}}",
+                "{{endpoint_id}}",
+                "{{funct}}"
+              ]
+            },
+            "description": "Load MCP configuration including tools, resources, prompts, modules, and settings. This is a bulk operation that processes and stores the entire MCP configuration."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
