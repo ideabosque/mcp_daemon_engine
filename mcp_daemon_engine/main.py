@@ -63,6 +63,34 @@ def deploy() -> List:
                             "action": "deleteMcpFunctionCall",
                             "label": "Delete MCP Function Call",
                         },
+                        {
+                            "action": "insertUpdateMcpModule",
+                            "label": "Create Update MCP Module",
+                        },
+                        {
+                            "action": "deleteMcpModule",
+                            "label": "Delete MCP Module",
+                        },
+                        {
+                            "action": "insertUpdateMcpSetting",
+                            "label": "Create Update MCP Setting",
+                        },
+                        {
+                            "action": "deleteMcpSetting",
+                            "label": "Delete MCP Setting",
+                        },
+                        {
+                            "action": "loadMcpConfiguration",
+                            "label": "Load MCP Configuration",
+                        },
+                        {
+                            "action": "generateMcpPackageUploadUrl",
+                            "label": "Generate MCP Package Upload URL",
+                        },
+                        {
+                            "action": "processMcpPackage",
+                            "label": "Process MCP Package",
+                        },
                     ],
                     "type": "RequestResponse",
                     "support_methods": ["POST"],

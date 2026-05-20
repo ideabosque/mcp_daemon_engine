@@ -17,6 +17,10 @@ from ..mutations.mcp_function_call import (
 )
 from ..mutations.mcp_module import DeleteMcpModule, InsertUpdateMcpModule
 from ..mutations.mcp_setting import DeleteMcpSetting, InsertUpdateMcpSetting
+from ..mutations.mcp_upload import (
+    GenerateMcpPackageUploadUrl,
+    ProcessMcpPackage,
+)
 from ..queries.mcp_function import resolve_mcp_function, resolve_mcp_function_list
 from ..queries.mcp_function_call import (
     resolve_mcp_function_call,
@@ -27,6 +31,7 @@ from ..queries.mcp_setting import resolve_mcp_setting, resolve_mcp_setting_list
 from ..types.mcp_function import MCPFunctionListType, MCPFunctionType
 from ..types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
 from ..types.mcp_module import MCPModuleListType, MCPModuleType
+from ..types.mcp_configuration_stats import McpConfigurationStats
 from ..types.mcp_setting import MCPSettingListType, MCPSettingType
 
 
@@ -40,6 +45,7 @@ def type_class():
         MCPModuleListType,
         MCPSettingType,
         MCPSettingListType,
+        McpConfigurationStats,
     ]
 
 
@@ -152,6 +158,8 @@ class Query(ObjectType):
 
 class Mutations(ObjectType):
     load_mcp_configuration = LoadMcpConfiguration.Field()
+    generate_mcp_package_upload_url = GenerateMcpPackageUploadUrl.Field()
+    process_mcp_package = ProcessMcpPackage.Field()
     insert_update_mcp_function = InsertUpdateMcpFunction.Field()
     delete_mcp_function = DeleteMcpFunction.Field()
     insert_update_mcp_function_call = InsertUpdateMcpFunctionCall.Field()
