@@ -5,10 +5,12 @@ from __future__ import print_function
 __author__ = "bibow"
 
 import base64
+import importlib
 import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import traceback
 import zipfile
@@ -380,6 +382,47 @@ def validate_manifest(
         log.info("Manifest validation passed")
 
 
+def _import_mcp_configuration_from_dir(
+    extract_dir: str, module_name: str, log: Any
+) -> Dict[str, Any]:
+    """Import ``module_name`` from ``extract_dir`` and return its
+    ``MCP_CONFIGURATION`` attribute.
+
+    Used as a fallback when an uploaded package has no
+    ``mcp_configuration.json`` at the archive root. The import is performed
+    in isolation: ``sys.path`` is prepended with ``extract_dir`` and any
+    previously cached version of the module (and its submodules) is removed
+    so the import resolves against the temp tree. State is restored in a
+    ``finally`` block whether the import succeeds or not.
+    """
+    original_path = sys.path[:]
+    cached_modules = {
+        k: v
+        for k, v in sys.modules.items()
+        if k == module_name or k.startswith(f"{module_name}.")
+    }
+
+    try:
+        sys.path.insert(0, extract_dir)
+        for cached in list(cached_modules.keys()):
+            del sys.modules[cached]
+
+        module = importlib.import_module(module_name)
+        if not hasattr(module, "MCP_CONFIGURATION"):
+            raise Exception(
+                f"Package has no mcp_configuration.json at archive root and "
+                f"module '{module_name}' does not expose MCP_CONFIGURATION"
+            )
+        return getattr(module, "MCP_CONFIGURATION")
+    finally:
+        sys.path[:] = original_path
+        for mod_name in list(sys.modules.keys()):
+            if mod_name == module_name or mod_name.startswith(f"{module_name}."):
+                del sys.modules[mod_name]
+        for k, v in cached_modules.items():
+            sys.modules[k] = v
+
+
 def download_and_validate_zip(
     s3_key: str,
     package_name: str,
@@ -442,17 +485,7 @@ def download_and_validate_zip(
                     )
             zf.extractall(extract_dir)
 
-        manifest_path = os.path.join(extract_dir, "mcp_configuration.json")
-        if not os.path.isfile(manifest_path):
-            raise Exception(
-                "Invalid package: missing mcp_configuration.json at archive root"
-            )
-
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            mcp_configuration = json.load(f)
-
-        validate_manifest(mcp_configuration, logger=log, module_name=module_name)
-
+        # Importable-root check must run before the import fallback can succeed.
         module_root_dir = os.path.join(extract_dir, module_name)
         module_root_file = os.path.join(extract_dir, f"{module_name}.py")
         if not os.path.isdir(module_root_dir) and not os.path.isfile(module_root_file):
@@ -460,6 +493,24 @@ def download_and_validate_zip(
                 f"Package does not expose '{module_name}' as an importable root "
                 f"(expected {module_name}/__init__.py or {module_name}.py)"
             )
+
+        # Manifest source: prefer mcp_configuration.json at archive root, fall
+        # back to importing {module_name}.MCP_CONFIGURATION from the temp tree.
+        manifest_path = os.path.join(extract_dir, "mcp_configuration.json")
+        if os.path.isfile(manifest_path):
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                mcp_configuration = json.load(f)
+            log.info("Loaded manifest from mcp_configuration.json")
+        else:
+            mcp_configuration = _import_mcp_configuration_from_dir(
+                extract_dir, module_name, log
+            )
+            log.info(
+                "Loaded manifest from module.MCP_CONFIGURATION "
+                "(no mcp_configuration.json at archive root)"
+            )
+
+        validate_manifest(mcp_configuration, logger=log, module_name=module_name)
 
         canonical_zip = os.path.join(Config.funct_zip_path, f"{package_name}.zip")
         shutil.copy2(zip_path, canonical_zip)

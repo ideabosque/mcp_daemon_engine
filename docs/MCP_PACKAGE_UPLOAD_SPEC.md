@@ -1,8 +1,8 @@
 # MCP Package Upload and Configuration Load
 
 > Status: Implemented
-> Document version: 5.3
-> Last updated: 2026-05-19
+> Document version: 5.4
+> Last updated: 2026-05-21
 
 ## 1. Overview
 
@@ -111,15 +111,19 @@ Processing sequence (as implemented in `process_mcp_package()` and its helper `d
 4. Verify the downloaded file is a valid ZIP via `zipfile.is_zipfile`.
 5. Reject ZIP members with absolute paths, Windows drive prefixes (`:` in the first segment), or `..` traversal — checked **before** extraction.
 6. Extract into the temp validation directory.
-7. Load `mcp_configuration.json` from the archive root; fail if missing or invalid JSON.
-8. Run `validate_manifest()` (see §7) against the parsed dict.
-9. Verify the archive exposes either `{moduleName}/` (directory) or `{moduleName}.py` (single file).
+7. Verify the archive exposes either `{moduleName}/` (directory) or `{moduleName}.py` (single file). Required for both manifest-source paths.
+8. Resolve the manifest dict from one of two sources:
+   - **Preferred:** if `mcp_configuration.json` exists at the archive root, parse it as JSON.
+   - **Fallback:** otherwise, prepend the temp extract dir to `sys.path` (with sys.path / sys.modules saved-and-restored in a `finally` block), `importlib.import_module(module_name)`, and read its `MCP_CONFIGURATION` attribute. Raises if the attribute is missing.
+9. Run `validate_manifest()` (see §7) against the resolved dict.
 10. Copy the temp ZIP to `Config.funct_zip_path/{packageName}.zip`.
 11. Extract the canonical ZIP into `Config.funct_extract_path` so subsequent in-process imports resolve locally.
 12. **Clear** the MCP configuration cache for the current `partition_key`.
-13. Persist the parsed manifest through `load_mcp_configuration_into_models()` (passing `mcp_configuration`, `module_name`, `package_name`, `source` defaulting to `"s3"`, `variables`, and `updated_by`).
+13. Persist the manifest through `load_mcp_configuration_into_models()` (passing `mcp_configuration`, `module_name`, `package_name`, `source` defaulting to `"s3"`, `variables`, and `updated_by`).
 14. **Warm** the cache with `Config.fetch_mcp_configuration(partition_key, force_refresh=True)`. Failure here is logged as a warning but does not change the mutation's `ok=true` result.
 15. Remove the temp directory regardless of outcome.
+
+**Manifest-source trade-off.** The JSON-file form validates structure before any user code runs, but duplicates configuration the package already exposes in Python. The import-fallback form executes the package's import-time code before manifest validation; use it when you trust the package author and want a single source of truth. Existing packages in this repository (`mcp_function_demo`, `mcp_mypay_dispatcher`, `mcp_resolvepay_connector`, etc.) already re-export `MCP_CONFIGURATION` from their `__init__.py`, so the fallback works without any package-side changes.
 
 The cache is cleared *before* DB writes and warmed *after*, so any in-flight readers see consistent state.
 
@@ -163,7 +167,9 @@ All three success paths now populate `stats` on the payload using `McpConfigurat
 
 ## 6. Package Layout
 
-Recommended ZIP structure:
+Two layouts are accepted. Pick whichever matches your codebase.
+
+**JSON-manifest form** (validate-before-execute):
 
 ```text
 weather_tools.zip
@@ -174,6 +180,20 @@ weather_tools.zip
 |   `-- helpers.py
 `-- requirements.txt
 ```
+
+**Python-module form** (single source of truth — used by the existing in-repo packages):
+
+```text
+weather_tools.zip
+|-- weather_tools/
+|   |-- __init__.py            # re-exports MCP_CONFIGURATION
+|   |-- mcp_configuration.py   # MCP_CONFIGURATION = {...}
+|   |-- weather_tool.py
+|   `-- helpers.py
+`-- requirements.txt
+```
+
+The `__init__.py` must expose `MCP_CONFIGURATION` at the package's top level (e.g. `from .mcp_configuration import MCP_CONFIGURATION`). The single-file variant (`MCP_CONFIGURATION` declared directly in `weather_tools/weather_tools.py` and re-exported by `__init__.py`) also works — see `mcp_function_demo` for a reference.
 
 `requirements.txt` is informational only. The daemon does not install dependencies during upload processing or runtime execution.
 
