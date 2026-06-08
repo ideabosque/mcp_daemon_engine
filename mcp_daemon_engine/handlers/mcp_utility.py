@@ -205,6 +205,39 @@ def _insert_update_mcp_function_call(
     return mcp_function_call
 
 
+def _extract_audit_text(content) -> str:
+    """Extract a text representation from any MCP result shape for audit logging.
+
+    Tools return ``list[TextContent | ImageContent | EmbeddedResource]`` whose
+    items serialize to dicts with ``text``. Resources return ``ReadResourceResult``
+    whose dump shape is ``{"contents": [{"text": ...}]}``. Prompts return
+    ``GetPromptResult`` whose dump shape is
+    ``{"messages": [{"content": {"text": ...}}]}``. Anything else falls back
+    to ``str()`` so the audit row never blocks a successful call.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, list):
+        if content and isinstance(content[0], dict):
+            return content[0].get("text") or Serializer.json_dumps(content[0])
+        return Serializer.json_dumps(content)
+    if isinstance(content, dict):
+        contents = content.get("contents")
+        if isinstance(contents, list) and contents:
+            first = contents[0]
+            if isinstance(first, dict) and first.get("text") is not None:
+                return first["text"]
+        messages = content.get("messages")
+        if isinstance(messages, list) and messages:
+            first = messages[0]
+            if isinstance(first, dict):
+                msg_content = first.get("content")
+                if isinstance(msg_content, dict) and msg_content.get("text") is not None:
+                    return msg_content["text"]
+        return Serializer.json_dumps(content)
+    return str(content)
+
+
 def execute_decorator():
     def actual_decorator(original_function):
         @functools.wraps(original_function)
@@ -301,7 +334,7 @@ def execute_decorator():
                             "mcp_function_call_uuid": mcp_function_call[
                                 "mcpFunctionCallUuid"
                             ],
-                            "content": content[0]["text"],
+                            "content": _extract_audit_text(content),
                             "status": "completed",
                             "time_spent": time_spent,
                             "updatedBy": "mcp_daemon_engine",
@@ -408,6 +441,10 @@ def _download_and_extract_package(package_name: str) -> None:
 def _get_module(package_name: str, module_name: str, source: str = None) -> type:
     try:
         """Get the module class from the package."""
+        if source == "external":
+            from . import external_mcp_proxy as module
+            return module
+
         if source is None:
             return getattr(__import__(module_name), module_name)
 
@@ -578,6 +615,9 @@ def execute_tool_function(
             else:
                 tool_obj.endpoint_id = partition_key
                 tool_obj.part_id = None
+
+        if module.get("source") == "external":
+            tool_obj._mcp_function_name = name
 
         tool_function = getattr(tool_obj, module_link["function_name"])
 

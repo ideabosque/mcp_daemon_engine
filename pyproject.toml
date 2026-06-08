@@ -16,6 +16,8 @@ dependencies = [
   "pendulum",
   "SilvaEngine-DynamoDB-Base",
   "SilvaEngine-Utility",
+  "mcp-http-client",
+  "aiohttp",
 ]
 
 [project.scripts]

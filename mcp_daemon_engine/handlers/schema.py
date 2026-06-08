@@ -10,6 +10,7 @@ from typing import Any, Dict
 from graphene import DateTime, Field, Int, ObjectType, ResolveInfo, String
 
 from ..mutations.mcp_configuration import LoadMcpConfiguration
+from ..mutations.mcp_external import SyncExternalMcpServer
 from ..mutations.mcp_function import DeleteMcpFunction, InsertUpdateMcpFunction
 from ..mutations.mcp_function_call import (
     DeleteMcpFunctionCall,
@@ -158,6 +159,7 @@ class Query(ObjectType):
 
 class Mutations(ObjectType):
     load_mcp_configuration = LoadMcpConfiguration.Field()
+    sync_external_mcp_server = SyncExternalMcpServer.Field()
     generate_mcp_package_upload_url = GenerateMcpPackageUploadUrl.Field()
     process_mcp_package = ProcessMcpPackage.Field()
     insert_update_mcp_function = InsertUpdateMcpFunction.Field()

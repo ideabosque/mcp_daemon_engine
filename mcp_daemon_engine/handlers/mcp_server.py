@@ -93,18 +93,13 @@ async def call_tool(
 @server.list_resources()
 async def list_resources(partition_key: str = "default") -> List[Resource]:
     """List available resources for the given endpoint"""
-    config = get_mcp_configuration_with_retry(partition_key).get("resources", [])
-
-    if isinstance(config, dict) and "resources" in config:
-        resources = config.get("resources", [])
-
-        if isinstance(resources, list):
-            return [
-                Resource(**resource)
-                for resource in resources
-                if isinstance(resource, dict) and "inputSchema" in resource
-            ]
-    return []
+    config = get_mcp_configuration_with_retry(partition_key)
+    resources = config.get("resources", []) if isinstance(config, dict) else []
+    return [
+        Resource(**resource)
+        for resource in resources
+        if isinstance(resource, dict) and resource.get("uri") and resource.get("name")
+    ]
 
 
 @server.read_resource()
@@ -139,7 +134,7 @@ async def list_prompts(partition_key: str = "default") -> List[Prompt]:
             return [
                 Prompt(
                     name=prompt["name"],
-                    description=prompt["description"],
+                    description=prompt.get("description", ""),
                     arguments=[
                         PromptArgument(**argument)
                         for argument in prompt.get("arguments", [])
@@ -147,7 +142,7 @@ async def list_prompts(partition_key: str = "default") -> List[Prompt]:
                     ],
                 )
                 for prompt in prompts
-                if isinstance(prompt, dict) and "inputSchema" in prompt
+                if isinstance(prompt, dict) and "name" in prompt
             ]
     return []
 

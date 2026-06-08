@@ -84,6 +84,10 @@ def deploy() -> List:
                             "label": "Load MCP Configuration",
                         },
                         {
+                            "action": "syncExternalMcpServer",
+                            "label": "Sync External MCP Server",
+                        },
+                        {
                             "action": "generateMcpPackageUploadUrl",
                             "label": "Generate MCP Package Upload URL",
                         },
