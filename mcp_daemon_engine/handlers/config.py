@@ -259,6 +259,11 @@ class Config:
     @classmethod
     def _setup_function_paths(cls, setting: Dict[str, Any]) -> None:
         cls.funct_bucket_name = setting.get("funct_bucket_name")
+        cls.logger.info(
+            f"_setup_function_paths: funct_bucket_name={cls.funct_bucket_name!r}, "
+            f"setting keys present={sorted(setting.keys())[:10]}..., "
+            f"'funct_bucket_name' in setting={'funct_bucket_name' in setting}"
+        )
         cls.funct_zip_path = (
             "/tmp/funct_zips"
             if setting.get("funct_zip_path") is None
