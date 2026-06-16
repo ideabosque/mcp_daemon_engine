@@ -520,6 +520,11 @@ def download_and_validate_zip(
             zf.extractall(Config.funct_extract_path)
         log.info(f"Extracted package to {Config.funct_extract_path}")
 
+        from .mcp_utility import purge_module_import_cache
+
+        purge_module_import_cache(module_name)
+        log.info(f"Cleared Python import cache for module: {module_name}")
+
         return mcp_configuration
 
     finally:

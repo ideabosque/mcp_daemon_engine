@@ -7,6 +7,8 @@ __author__ = "bibow"
 import asyncio
 import concurrent.futures
 import functools
+import importlib
+import importlib.util
 import os
 import re
 import sys
@@ -15,7 +17,7 @@ import time
 import traceback
 import zipfile
 from typing import Any, Dict, Optional, Sequence
-
+from types import ModuleType
 import pendulum
 from mcp.types import (
     EmbeddedResource,
@@ -442,7 +444,10 @@ def get_mcp_configuration_with_retry(
 def _module_exists(module_name: str) -> bool:
     """Check if the module exists in the specified path."""
     module_dir = os.path.join(Config.funct_extract_path, module_name)
-    if os.path.exists(module_dir) and os.path.isdir(module_dir):
+    module_file = os.path.join(Config.funct_extract_path, f"{module_name}.py")
+    if os.path.isfile(os.path.join(module_dir, "__init__.py")) or os.path.isfile(
+        module_file
+    ):
         Config.logger.info(
             f"Module {module_name} found in {Config.funct_extract_path}."
         )
@@ -451,6 +456,17 @@ def _module_exists(module_name: str) -> bool:
         f"Module {module_name} not found in {Config.funct_extract_path}."
     )
     return False
+
+
+def purge_module_import_cache(module_name: str) -> None:
+    """Remove an MCP package and its submodules from Python's import cache."""
+    for cached in [
+        name
+        for name in sys.modules
+        if name == module_name or name.startswith(f"{module_name}.")
+    ]:
+        del sys.modules[cached]
+    importlib.invalidate_caches()
 
 
 def _download_and_extract_package(package_name: str) -> None:
@@ -471,7 +487,38 @@ def _download_and_extract_package(package_name: str) -> None:
     Config.logger.info(f"Extracted module to {Config.funct_extract_path}")
 
 
-def _get_module(package_name: str, module_name: str, source: str = None) -> type:
+def _import_module_from_extract_path(module_name: str) -> ModuleType:
+    module_root = os.path.join(Config.funct_extract_path, module_name)
+    module_file = os.path.join(Config.funct_extract_path, f"{module_name}.py")
+
+    purge_module_import_cache(module_name)
+
+    if os.path.isdir(module_root):
+        init_file = os.path.join(module_root, "__init__.py")
+        if not os.path.isfile(init_file):
+            raise ImportError(f"Package directory has no __init__.py: {module_root}")
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            init_file,
+            submodule_search_locations=[module_root],
+        )
+    elif os.path.isfile(module_file):
+        spec = importlib.util.spec_from_file_location(module_name, module_file)
+    else:
+        raise ImportError(
+            f"Module {module_name} not found under {Config.funct_extract_path}"
+        )
+
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create import spec for {module_name}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _get_module(package_name: str, module_name: str, source: str = None) -> ModuleType:
     try:
         """Get the module class from the package."""
         if source == "external":
@@ -490,11 +537,9 @@ def _get_module(package_name: str, module_name: str, source: str = None) -> type
         # Add the extracted module to sys.path
         module_path = f"{Config.funct_extract_path}"
         if module_path not in sys.path:
-            sys.path.append(module_path)
+            sys.path.insert(0, module_path)
 
-        # Import the module and get the class
-        module = __import__(module_name)
-        return module
+        return _import_module_from_extract_path(module_name)
     except Exception as e:
         log = traceback.format_exc()
         Config.logger.error(log)
