@@ -8,6 +8,7 @@ import asyncio
 import concurrent.futures
 import functools
 import os
+import re
 import sys
 import threading
 import time
@@ -32,6 +33,30 @@ from .config import Config
 
 # Global registry to track active background threads
 _active_threads = []
+
+
+def _camel_to_snake(name: str) -> str:
+    """Convert camelCase string to snake_case.
+
+    Examples: apiKey → api_key, baseUrl → base_url,
+              rateLimitCallsPerSecond → rate_limit_calls_per_second
+    """
+    # Insert underscore before uppercase letters that follow lowercase or digits
+    s1 = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    # Insert underscore between consecutive uppercase letters followed by lowercase
+    s2 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s1)
+    return s2.lower()
+
+
+def _normalize_setting_keys(setting: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert camelCase setting keys to snake_case for connector compatibility.
+
+    Settings stored via GraphQL JSONCamelCase scalar use camelCase
+    (e.g. apiKey, baseUrl, merchantId), but connector classes expect
+    snake_case (e.g. api_key, base_url, merchant_id). This function
+    normalizes the keys so connectors receive what they expect.
+    """
+    return {_camel_to_snake(k): v for k, v in setting.items()}
 
 
 def wait_for_background_threads(timeout=30):
@@ -236,7 +261,10 @@ def _extract_audit_text(content) -> str:
             first = messages[0]
             if isinstance(first, dict):
                 msg_content = first.get("content")
-                if isinstance(msg_content, dict) and msg_content.get("text") is not None:
+                if (
+                    isinstance(msg_content, dict)
+                    and msg_content.get("text") is not None
+                ):
                     return msg_content["text"]
         return Serializer.json_dumps(content)
     return str(content)
@@ -431,7 +459,8 @@ def _download_and_extract_package(package_name: str) -> None:
     zip_path = f"{Config.funct_zip_path}/{key}"
 
     Config.logger.info(
-        f"Downloading module from S3: bucket={Config.funct_bucket_name}, key={key}"
+        f"Downloading module from S3: bucket={Config.funct_bucket_name!r}, key={key}, "
+        f"funct_zip_path={Config.funct_zip_path!r}"
     )
     Config.aws_s3.download_file(Config.funct_bucket_name, key, zip_path)
     Config.logger.info(f"Downloaded {key} from S3 to {zip_path}")
@@ -447,6 +476,7 @@ def _get_module(package_name: str, module_name: str, source: str = None) -> type
         """Get the module class from the package."""
         if source == "external":
             from . import external_mcp_proxy as module
+
             return module
 
         if source is None:
@@ -608,7 +638,8 @@ def execute_tool_function(
             raise Exception(f"Failed to load tool class: {module['class_name']}")
 
         tool_obj = tool_class(
-            Config.logger, **Serializer.json_normalize(module["setting"])
+            Config.logger,
+            **_normalize_setting_keys(Serializer.json_normalize(module["setting"])),
         )
 
         if hasattr(tool_obj, "endpoint_id") and hasattr(tool_obj, "part_id"):
@@ -772,7 +803,7 @@ def execute_resource_function(
 
         resource_obj = resource_class(
             Config.logger,
-            **Serializer.json_normalize(module["setting"]),
+            **_normalize_setting_keys(Serializer.json_normalize(module["setting"])),
         )
 
         if hasattr(resource_obj, "endpoint_id") and hasattr(resource_obj, "part_id"):
@@ -853,7 +884,7 @@ def execute_prompt_function(
 
         prompt_obj = prompt_class(
             Config.logger,
-            **Serializer.json_normalize(module["setting"]),
+            **_normalize_setting_keys(Serializer.json_normalize(module["setting"])),
         )
 
         if hasattr(prompt_obj, "endpoint_id") and hasattr(prompt_obj, "part_id"):
