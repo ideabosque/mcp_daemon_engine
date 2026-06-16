@@ -334,6 +334,13 @@ class Config:
     def _load(cls) -> dict[str, LocalUser]:
         p = Path(cls.local_user_file).expanduser()
 
+        if not p.exists():
+            cls.logger.warning(
+                f"Local user file not found: {p} — no local users loaded. "
+                f"Admin credentials will still work via environment config."
+            )
+            return {}
+
         with p.open("r", encoding="utf-8") as f:
             raw = json.load(f)
 
