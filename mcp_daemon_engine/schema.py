@@ -9,31 +9,31 @@ from typing import Any, Dict
 
 from graphene import DateTime, Field, Int, ObjectType, ResolveInfo, String
 
-from ..mutations.mcp_configuration import LoadMcpConfiguration
-from ..mutations.mcp_external import SyncExternalMcpServer
-from ..mutations.mcp_function import DeleteMcpFunction, InsertUpdateMcpFunction
-from ..mutations.mcp_function_call import (
+from .mutations.mcp_configuration import LoadMcpConfiguration
+from .mutations.mcp_external import SyncExternalMcpServer
+from .mutations.mcp_function import DeleteMcpFunction, InsertUpdateMcpFunction
+from .mutations.mcp_function_call import (
     DeleteMcpFunctionCall,
     InsertUpdateMcpFunctionCall,
 )
-from ..mutations.mcp_module import DeleteMcpModule, InsertUpdateMcpModule
-from ..mutations.mcp_setting import DeleteMcpSetting, InsertUpdateMcpSetting
-from ..mutations.mcp_upload import (
+from .mutations.mcp_module import DeleteMcpModule, InsertUpdateMcpModule
+from .mutations.mcp_setting import DeleteMcpSetting, InsertUpdateMcpSetting
+from .mutations.mcp_upload import (
     GenerateMcpPackageUploadUrl,
     ProcessMcpPackage,
 )
-from ..queries.mcp_function import resolve_mcp_function, resolve_mcp_function_list
-from ..queries.mcp_function_call import (
+from .queries.mcp_function import resolve_mcp_function, resolve_mcp_function_list
+from .queries.mcp_function_call import (
     resolve_mcp_function_call,
     resolve_mcp_function_call_list,
 )
-from ..queries.mcp_module import resolve_mcp_module, resolve_mcp_module_list
-from ..queries.mcp_setting import resolve_mcp_setting, resolve_mcp_setting_list
-from ..types.mcp_function import MCPFunctionListType, MCPFunctionType
-from ..types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
-from ..types.mcp_module import MCPModuleListType, MCPModuleType
-from ..types.mcp_configuration_stats import McpConfigurationStats
-from ..types.mcp_setting import MCPSettingListType, MCPSettingType
+from .queries.mcp_module import resolve_mcp_module, resolve_mcp_module_list
+from .queries.mcp_setting import resolve_mcp_setting, resolve_mcp_setting_list
+from .types.mcp_function import MCPFunctionListType, MCPFunctionType
+from .types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
+from .types.mcp_module import MCPModuleListType, MCPModuleType
+from .types.mcp_configuration_stats import McpConfigurationStats
+from .types.mcp_setting import MCPSettingListType, MCPSettingType
 
 
 def type_class():

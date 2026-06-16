@@ -1,12 +1,10 @@
 [project]
 name = "mcp-daemon-engine"
 version = "0.0.1"
-description = "MCP Daemon CLI for SSE or stdio transport"
+description = "MCP daemon business logic with gateway dispatch entry points"
 authors = [{name = "Idea Bosque"}]
 dependencies = [
-  "mcp",  # assuming your module is published or locally linkable,
-  "fastapi[all]",
-  "uvicorn[standard]",
+  "mcp",
   "python-jose[cryptography]",
   "httpx[http2]",
   "bcrypt",
@@ -20,13 +18,17 @@ dependencies = [
   "aiohttp",
 ]
 
-[project.scripts]
-mcp-daemon = "mcp_daemon_engine.main:main"
-
 [project.optional-dependencies]
 dev = [
   "ruff",
 ]
+
+[tool.pytest.ini_options]
+# Only collect this package's own tests. tests/tmp/ holds extracted package
+# artifacts staged by manual processMcpPackage runs (gitignored) and must not
+# be discovered as tests.
+testpaths = ["mcp_daemon_engine/tests"]
+norecursedirs = ["tmp", ".git", "build", "*.egg-info", ".ruff_cache", "__pycache__"]
 
 [tool.pyright]
 typeCheckingMode = "basic"

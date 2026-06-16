@@ -31,8 +31,26 @@ from .mcp_utility import (
     get_mcp_configuration_with_retry,
 )
 
-# === FastAPI and MCP Initialization ===
+# === MCP SDK Initialization ===
 server = Server("MCP SSE Server")
+
+
+def _serialize_resource_result(result: Any, uri: str) -> List[Dict[str, Any]]:
+    if isinstance(result, dict):
+        contents = result.get("contents")
+    elif hasattr(result, "model_dump"):
+        contents = result.model_dump(mode="json", exclude_none=True).get("contents")
+    else:
+        contents = None
+
+    if isinstance(contents, list):
+        return [
+            content
+            for content in contents
+            if isinstance(content, dict)
+        ]
+
+    return [{"uri": uri, "mimeType": "text/plain", "text": str(result), "_meta": {}}]
 
 
 # === Tool Definitions ===
@@ -164,7 +182,7 @@ async def get_prompt(
     ):
         raise ValueError(f"Unknown prompt: {name}")
 
-    return execute_prompt_function(partition_key, name, arguments)
+    return execute_prompt_function(partition_key, name, arguments or {})
 
 
 # === MCP Message Handling ===
@@ -289,16 +307,7 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {
-                    "contents": [
-                        {
-                            "uri": params["uri"],
-                            "mimeType": "text/plain",
-                            "text": content,
-                            "_meta": {},
-                        }
-                    ]
-                },
+                "result": {"contents": _serialize_resource_result(content, params["uri"])},
             }
 
         # Handle MCP protocol messages

@@ -15,7 +15,7 @@ The external server inventory is stored in the existing catalog:
 - One `MCPModule` row per external server.
 - One `MCPSetting` row containing the external server connection settings.
 
-Runtime execution reuses the existing dispatcher, audit logging, cache, SSE/stdio transport, and GraphQL CRUD paths.
+Runtime execution reuses the existing dispatcher, audit logging, cache, gateway-delivered SSE/JSON-RPC transport, and GraphQL CRUD paths.
 
 ## 2. Current State
 
@@ -24,7 +24,7 @@ The external-proxy implementation is present, but live integration verification 
 | Area | Current state |
 | ---- | ------------- |
 | External client package | `mcp-http-client` is listed in `pyproject.toml`. The current code imports `MCPHttpClient` from `mcp_http_client`. |
-| External sync mutation | `SyncExternalMcpServer` exists in `mcp_daemon_engine/mutations/mcp_external.py` and is registered in `handlers/schema.py` and `main.py`. |
+| External sync mutation | `SyncExternalMcpServer` exists in `mcp_daemon_engine/mutations/mcp_external.py` and is registered in `mcp_daemon_engine/schema.py`; gateway GraphQL access is exposed through `main.py:dispatch_graphql`. |
 | External sync handler | `mcp_daemon_engine/handlers/mcp_external.py` contains validation, inventory fetch, manifest translation, persistence, and cache refresh. |
 | Built-in proxy adapter | `mcp_daemon_engine/handlers/external_mcp_proxy.py` contains `ExternalMCPProxy` with `call_tool`, `read_resource`, and `get_prompt`. |
 | Dispatcher external source handling | `_get_module()` short-circuits when `source == "external"` and returns the built-in proxy module instead of using the S3 package path. |
@@ -118,7 +118,7 @@ Arguments:
 Registered in:
 
 - `mcp_daemon_engine/mutations/mcp_external.py`
-- `mcp_daemon_engine/handlers/schema.py`
+- `mcp_daemon_engine/schema.py`
 - `mcp_daemon_engine/main.py`
 
 ## 7. Sync Handler
@@ -349,8 +349,8 @@ Tool execution still extracts `content[0].get("text")`, so the existing tool aud
 | `mcp_daemon_engine/handlers/mcp_external.py` | New sync handler and manifest translation helpers. | Done |
 | `mcp_daemon_engine/handlers/external_mcp_proxy.py` | New adapter used by runtime dispatch. | Done |
 | `mcp_daemon_engine/mutations/mcp_external.py` | New `SyncExternalMcpServer` mutation. | Done |
-| `mcp_daemon_engine/handlers/schema.py` | Register the mutation. | Done |
-| `mcp_daemon_engine/main.py` | Add `syncExternalMcpServer` to the deploy manifest. | Done |
+| `mcp_daemon_engine/schema.py` | Register the mutation. | Done |
+| `mcp_daemon_engine/main.py` | Expose gateway GraphQL dispatch for `syncExternalMcpServer`. | Done |
 | `mcp_daemon_engine/handlers/mcp_utility.py` | Add `source == "external"` module short-circuit and tool-name injection. | Done |
 | `mcp_daemon_engine/handlers/mcp_server.py` | Fix prompt filter, resource filter, and prompt description hardening. | Done |
 | `mcp_daemon_engine/handlers/mcp_utility.py` | External module loading, tool-name injection, and `_extract_audit_text()` for resource/prompt audit serialization. | Done |
@@ -420,7 +420,7 @@ sequenceDiagram
 
 Sync:
 
-- Done: `syncExternalMcpServer` appears in the GraphQL schema and deploy manifest.
+- Done: `syncExternalMcpServer` appears in the GraphQL schema and is reachable through the gateway GraphQL dispatch path.
 - Pending verification: syncing a mock HTTP MCP server writes expected function/module/setting rows.
 - Pending verification: synced rows use `source == "external"` and `className == "ExternalMCPProxy"`.
 - Pending verification: re-running sync updates existing rows and refreshes the partition cache.
@@ -474,8 +474,8 @@ Recommended tests:
 - `mcp_daemon_engine/handlers/mcp_utility.py`: runtime dispatch, dynamic module loading, and audit decorator.
 - `mcp_daemon_engine/handlers/mcp_server.py`: MCP list/call/read/get endpoints.
 - `mcp_daemon_engine/handlers/config.py`: configuration cache, model fetch assembly, AWS clients.
-- `mcp_daemon_engine/handlers/schema.py`: Graphene schema registration.
-- `mcp_daemon_engine/main.py`: SilvaEngine deploy manifest and partition-key setup.
+- `mcp_daemon_engine/schema.py`: Graphene schema registration.
+- `mcp_daemon_engine/main.py`: Gateway dispatch functions and partition-key setup.
 - `mcp_daemon_engine/mutations/mcp_external.py`: `SyncExternalMcpServer` GraphQL mutation.
 - `mcp_daemon_engine/models/mcp_function.py`: function row upsert behavior.
 - `mcp_daemon_engine/models/mcp_module.py`: module row upsert behavior.

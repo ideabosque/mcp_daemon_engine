@@ -166,9 +166,6 @@ class Config:
 
     setting: Dict[str, Any] = {}
 
-    # === SSE Client Registry ===
-    sse_clients: Dict[int, asyncio.Queue] = {}
-    user_clients: Dict[str, set[int]] = {}
     transport = None
     port = None
     mcp_configuration = {}
@@ -176,7 +173,6 @@ class Config:
     funct_zip_path = None
     funct_extract_path = None
     logger = None
-    mcp_core = None
     aws_s3 = None
     aws_cognito_idp = None
     aws_lambda = None
@@ -206,19 +202,18 @@ class Config:
     jwks_cache_ttl: int | None = None  # seconds
 
     @classmethod
-    def initialize(cls, logger: logging.Logger, **setting: Dict[str, Any]) -> None:
+    def initialize(cls, logger: logging.Logger, setting: Dict[str, Any]) -> None:
         """
         Initialize configuration setting.
         Args:
             logger (logging.Logger): Logger instance for logging.
-            **setting (Dict[str, Any]): Configuration dictionary.
+            setting (Dict[str, Any]): Configuration dictionary.
         """
         try:
             cls.logger = logger
             cls.setting = setting
             cls._set_parameters(setting)
             cls._setup_function_paths(setting)
-            cls._initialize_mcp_core(logger, setting)
             cls._initialize_aws_services(logger, setting)
 
             if cls.transport == "sse" and cls.auth_provider == "local":
@@ -240,8 +235,6 @@ class Config:
             setting (Dict[str, Any]): Configuration dictionary.
         """
 
-        cls.sse_clients = {}
-        cls.user_clients = {}
         cls.transport = setting.get("transport", "sse")
         cls.port = setting.get("port", 8000)
         cls.auth_provider = setting.get("auth_provider", "local")  # "local" | "cognito"
@@ -280,33 +273,6 @@ class Config:
         )
         os.makedirs(cls.funct_zip_path, exist_ok=True)
         os.makedirs(cls.funct_extract_path, exist_ok=True)
-
-    @classmethod
-    def _initialize_mcp_core(
-        cls, logger: logging.Logger, setting: Dict[str, Any]
-    ) -> None:
-        """
-        Initialize MCP Core with AWS credentials.
-        Args:
-            logger (logging.Logger): Logger instance for logging
-            setting (Dict[str, Any]): Configuration dictionary containing AWS credentials
-        """
-
-        if all(
-            setting.get(k)
-            for k in ["region_name", "aws_access_key_id", "aws_secret_access_key"]
-        ):
-            try:
-                from .mcp_core import MCPCore
-
-                cls.mcp_core = MCPCore(logger, **setting)
-            except Exception as e:
-                if logger:
-                    logger.error(e)
-                else:
-                    print(e)
-
-                raise
 
     @classmethod
     def _initialize_aws_services(
@@ -553,7 +519,7 @@ class Config:
 
         try:
             # Step 1: Fetch all MCP functions
-            response = cls.mcp_core.mcp_core_graphql(
+            response = _dispatch_internal_graphql(
                 context={
                     "partition_key": partition_key,
                 },
@@ -582,7 +548,9 @@ class Config:
                 )
 
             # Step 2: Categorize functions by type
-            tools = resources = prompts = []
+            tools: List[Dict[str, Any]] = []
+            resources: List[Dict[str, Any]] = []
+            prompts: List[Dict[str, Any]] = []
 
             for func in mcp_functions:
                 if func.get("mcpType") == "tool":
@@ -699,7 +667,7 @@ class Config:
         for module_name, class_names in modules_classes.items():
             try:
                 # Fetch module information
-                module_response = cls.mcp_core.mcp_core_graphql(
+                module_response = _dispatch_internal_graphql(
                     context={
                         "partition_key": partition_key,
                     },
@@ -759,7 +727,7 @@ class Config:
                 # Fetch settings (could be optimized further with batch query if available)
                 for class_name, class_info in class_to_setting_map.items():
                     try:
-                        setting_response = cls.mcp_core.mcp_core_graphql(
+                        setting_response = _dispatch_internal_graphql(
                             context={
                                 "partition_key": partition_key,
                             },
@@ -842,11 +810,19 @@ class Config:
                 cls.logger.info("Cleared all MCP configuration cache")
 
     @classmethod
+    def get_logger(cls) -> logging.Logger:
+        """Return the initialized application logger."""
+        return cls.logger or logging.getLogger("mcp_daemon_engine")
+
+    @classmethod
+    def get_setting(cls) -> Dict[str, Any]:
+        """Return the initialized application settings."""
+        return cls.setting or {}
+
+    @classmethod
     def get_cache_name(cls, module_type: str, model_name: str) -> str:
         """Generate standardized cache names."""
-        base_name = cls.CACHE_NAMES.get(
-            module_type, f"mcp_daemon_engine.{module_type}"
-        )
+        base_name = cls.CACHE_NAMES.get(module_type, f"mcp_daemon_engine.{module_type}")
         return f"{base_name}.{model_name}"
 
     @classmethod
@@ -873,3 +849,15 @@ class Config:
     def get_entity_children(cls, entity_type: str) -> List[Dict[str, Any]]:
         """Get child entities for a specific entity type."""
         return cls.CACHE_RELATIONSHIPS.get(entity_type, [])
+
+
+def _dispatch_internal_graphql(**params: Dict[str, Any]) -> Any:
+    """Run a GraphQL query/mutation against the daemon's own schema.
+
+    Replaces the prior ``Config.mcp_core.mcp_daemon_graphql(...)`` self-loopback
+    pattern. The import is function-scoped to avoid a circular load
+    (``main.py`` imports ``handlers.config``).
+    """
+    from ..main import dispatch_graphql
+
+    return dispatch_graphql(**params)

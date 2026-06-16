@@ -6,13 +6,13 @@
 
 ## Executive Summary
 
-The **MCP Daemon Engine** is a lightweight, high-performance runtime for the **Model Context Protocol (MCP)**. It is designed to run as either a scalable HTTP **SSE/JSON-RPC** service or an embedded **STDIO** sidecar. The engine provides a robust foundation for AI agent tool execution, offering pluggable authentication (Local/Cognito), dynamic function loading from S3, and comprehensive observability via GraphQL and DynamoDB.
+The **MCP Daemon Engine** is a lightweight, high-performance runtime for the **Model Context Protocol (MCP)**. It now runs as a business-logic package behind `silvaengine_gateway` for HTTP SSE/JSON-RPC/GraphQL delivery. The engine provides a robust foundation for AI agent tool execution, dynamic function loading from S3, and comprehensive observability via GraphQL and DynamoDB.
 
 ### 📊 Project Progress Overview
 
 ```
 Core Runtime:         ████████████████████ 100% ✅ Complete
-Transport (SSE/Stdio):████████████████████ 100% ✅ Complete
+Gateway Transport:     ████████████████████ 100% ✅ Complete
 Auth System:          ████████████████████ 100% ✅ Complete
 GraphQL API:          ██████████████████░░  90% 🟢 Stable
 MCP Integration:      ████████████████████ 100% ✅ Complete
@@ -26,7 +26,7 @@ Overall Progress:     ███████████████░░░░�
 ### Core Architecture
 
 **Technology Stack:**
-- **Transport**: FastAPI (SSE/JSON-RPC) & Standard IO (Pipe)
+- **Transport**: `silvaengine_gateway` for HTTP SSE/JSON-RPC/GraphQL
 - **Database**: AWS DynamoDB with `SilvaEngine` data layer
 - **GraphQL**: Graphene-based schema for management and history
 - **Auth**: Pluggable middleware (Local JWT/Bcrypt or AWS Cognito)
@@ -153,12 +153,12 @@ def resolve_entity_list(info: ResolveInfo, **kwargs) -> EntityListType:
 graph TB
     subgraph Client Layer
         Browser[Browser / SSE Client]
-        StdioClient[Embedded Client]
+        GatewayClient[Gateway JSON-RPC Client]
     end
 
     subgraph API Layer
-        FastAPI[FastAPI JSON-RPC / SSE]
-        Auth[JWT / Cognito Middleware]
+        Gateway[SilvaEngine Gateway JSON-RPC / SSE]
+        Auth[Gateway Auth Middleware]
     end
 
     subgraph Daemon Core
@@ -173,9 +173,9 @@ graph TB
         Cache[In-Memory Cache<br/>Cascading Purge]
     end
 
-    Browser -->|SSE Stream| FastAPI
-    StdioClient -->|JSON-RPC| MCPServer
-    FastAPI --> Auth --> MCPServer
+    Browser -->|SSE Stream| Gateway
+    GatewayClient -->|JSON-RPC| Gateway
+    Gateway --> Auth --> MCPServer
     MCPServer -->|GraphQL CRUD| DDB
     MCPServer -->|Load Modules| S3
     MCPServer --> SSEMgr --> Browser
@@ -189,15 +189,15 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Client
-    participant FastAPI
+    participant Gateway
     participant MCPServer
     participant MCPUtils
     participant DynamoDB
     participant SSEManager
 
-    Client->>FastAPI: POST /mcp (Action)
-    activate FastAPI
-    FastAPI->>MCPServer: Process Message
+    Client->>Gateway: POST /mcp (Action)
+    activate Gateway
+    Gateway->>MCPServer: Process Message
     activate MCPServer
     
     MCPServer->>MCPUtils: Execute Tool/Resource
@@ -212,10 +212,10 @@ sequenceDiagram
     SSEManager-->>Client: SSE Event (Result)
     deactivate SSEManager
 
-    MCPServer-->>FastAPI: 200 OK
+    MCPServer-->>Gateway: 200 OK
     deactivate MCPServer
-    FastAPI-->>Client: Ack
-    deactivate FastAPI
+    Gateway-->>Client: Ack
+    deactivate Gateway
 ```
 
 ---
@@ -412,7 +412,7 @@ Shared configuration for module classes.
 #### ✅ Completed Components (100%)
 
 **Core Infrastructure** (✅ **COMPLETED**)
-- [x] Dual Transport Architecture (SSE + Stdio)
+- [x] Gateway-delivered SSE and JSON-RPC architecture
 - [x] DynamoDB integration via `SilvaEngine`
 - [x] S3 integration for function bundles
 - [x] Cascading Cache Purger hooks
@@ -631,8 +631,7 @@ pip install -e ".[dev]"
 Create a `.env` file:
 
 ```bash
-# Transport
-MCP_TRANSPORT=sse
+# Gateway transport
 PORT=8000
 
 # Authentication
@@ -659,11 +658,8 @@ INITIALIZE_TABLES=1  # First run only
 ### Running the Daemon
 
 ```bash
-# Start the server
-mcp-daemon
-
-# Or with uvicorn directly
-uvicorn mcp_daemon_engine.handlers.mcp_app:app --reload --port 8000
+# HTTP/SSE/GraphQL delivery is hosted by the gateway
+python -m silvaengine_gateway
 ```
 
 ### Verify Installation
@@ -742,10 +738,8 @@ pytest -m integration        # Slow tests
 
 **Required Variables:**
 ```bash
-# Core
-MCP_TRANSPORT=sse|stdio
+# Gateway core
 PORT=8000
-MCP_CONFIG_FILE=path/to/config.json
 
 # Auth
 AUTH_PROVIDER=local|cognito

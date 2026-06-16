@@ -44,7 +44,7 @@
     },
     {
       "key": "funct",
-      "value": "mcp_core_graphql",
+      "value": "mcp_daemon_graphql",
       "type": "string"
     },
     {

@@ -124,7 +124,9 @@ def _check_existing_function_call(
     partition_key: str,
     mcp_function_call_uuid: str,
 ) -> Dict[str, Any]:
-    response = Config.mcp_core.mcp_core_graphql(
+    from .config import _dispatch_internal_graphql
+
+    response = _dispatch_internal_graphql(
         **{
             "context": {
                 "partition_key": partition_key,
@@ -154,10 +156,12 @@ def _insert_update_mcp_function_call(
     """
     Private helper function to insert/update MCP function call record
     """
+    from .config import _dispatch_internal_graphql
+
     if kwargs.get("mcp_function_call_uuid"):
         Config.logger.info("Updating existing MCP function call")
 
-        response = Config.mcp_core.mcp_core_graphql(
+        response = _dispatch_internal_graphql(
             **{
                 "context": {
                     "partition_key": partition_key,
@@ -175,7 +179,7 @@ def _insert_update_mcp_function_call(
         )
     else:
         Config.logger.info("Making GraphQL call to insert/update MCP function")
-        response = Config.mcp_core.mcp_core_graphql(
+        response = _dispatch_internal_graphql(
             **{
                 "context": {
                     "partition_key": partition_key,

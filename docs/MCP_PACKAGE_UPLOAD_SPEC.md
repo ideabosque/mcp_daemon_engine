@@ -1,8 +1,8 @@
 # MCP Package Upload and Configuration Load
 
 > Status: Implemented
-> Document version: 5.4
-> Last updated: 2026-05-21
+> Document version: 5.5
+> Last updated: 2026-06-15
 
 ## 1. Overview
 
@@ -14,7 +14,7 @@ The daemon supports a GraphQL-driven workflow for loading MCP Python packages:
 
 For small development packages, `loadMcpConfiguration` also supports a Base64 inline ZIP shortcut through `packageBase64`.
 
-Both flows use the same Graphene schema path in FastAPI SSE mode and SilvaEngine Lambda mode: `Config.mcp_core.mcp_core_graphql()`.
+Both flows use the same Graphene schema path through `MCPDaemonEngine.mcp_daemon_graphql()` (reached internally via the `_dispatch_internal_graphql` helper). HTTP delivery now comes from `silvaengine_gateway`; this package no longer hosts FastAPI SSE routes directly.
 
 ## 2. Implemented Files
 
@@ -24,8 +24,8 @@ Both flows use the same Graphene schema path in FastAPI SSE mode and SilvaEngine
 | `mcp_daemon_engine/types/mcp_configuration_stats.py` | Shared stats payload type. |
 | `mcp_daemon_engine/handlers/mcp_handlers.py` | Upload URL generation, ZIP validation, manifest validation, Base64 handling, package processing, and model loading. |
 | `mcp_daemon_engine/mutations/mcp_configuration.py` | `loadMcpConfiguration`, including the Base64 package path. |
-| `mcp_daemon_engine/handlers/schema.py` | Registers upload mutations and stats type. |
-| `mcp_daemon_engine/main.py` | Registers upload/config/module/setting mutations in the SilvaEngine deploy manifest. |
+| `mcp_daemon_engine/schema.py` | Registers upload mutations and stats type. |
+| `mcp_daemon_engine/main.py` | Exposes `dispatch_graphql()` for gateway-hosted GraphQL requests. |
 
 ## 3. Runtime Contract
 
@@ -299,7 +299,7 @@ The loader prefers an explicit `mcp_configuration` dictionary before falling bac
 - Package and module names are restricted to Python-identifier-like names.
 - ZIP extraction rejects absolute paths, Windows drive prefixes, and `..` traversal.
 - Uploaded code executes in the daemon process. Only trusted administrators should be allowed to call upload and process mutations.
-- The SilvaEngine deploy manifest still marks `mcp_core_graphql` as `is_auth_required: False`; production deployments should ensure transport-level or resolver-level admin authorization.
+- Production deployments should enforce authorization in `silvaengine_gateway` and, if needed, add resolver-level admin checks for package-processing mutations.
 
 ## 11. Test Coverage Targets
 
