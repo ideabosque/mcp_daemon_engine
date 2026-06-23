@@ -9,7 +9,7 @@ from typing import Any, Dict
 from graphene import Boolean, Field, Mutation, String, List
 from silvaengine_utility import JSONCamelCase
 
-from ..models.mcp_module import delete_mcp_module, insert_update_mcp_module
+from ..models.repositories import get_repo
 from ..types.mcp_module import MCPModuleType
 
 
@@ -28,7 +28,7 @@ class InsertUpdateMcpModule(Mutation):
         root: Any, info: Any, **kwargs: Dict[str, Any]
     ) -> "InsertUpdateMcpModule":
         try:
-            mcp_module = insert_update_mcp_module(info, **kwargs)
+            mcp_module = get_repo("mcp_module").insert_update(info, **kwargs)
         except Exception as e:
             log = traceback.format_exc()
             info.context.get("logger").error(log)
@@ -46,7 +46,7 @@ class DeleteMcpModule(Mutation):
     @staticmethod
     def mutate(root: Any, info: Any, **kwargs: Dict[str, Any]) -> "DeleteMcpModule":
         try:
-            ok = delete_mcp_module(info, **kwargs)
+            ok = get_repo("mcp_module").delete(info, **kwargs)
         except Exception as e:
             log = traceback.format_exc()
             info.context.get("logger").error(log)

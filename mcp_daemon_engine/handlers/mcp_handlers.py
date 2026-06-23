@@ -48,9 +48,7 @@ def load_mcp_configuration_into_models(
         Exception: If loading fails
     """
     try:
-        from ..models.mcp_function import insert_update_mcp_function
-        from ..models.mcp_module import insert_update_mcp_module
-        from ..models.mcp_setting import insert_update_mcp_setting
+        from ..models.repositories import get_repo
         from .mcp_utility import get_mcp_configuration_by_module
 
         partition_key = info.context["partition_key"]
@@ -99,7 +97,7 @@ def load_mcp_configuration_into_models(
                 info.context["logger"].info(
                     f"Loading tool '{tool.get('name')}' with data: {tool_data['data']}"
                 )
-                insert_update_mcp_function(info, **tool_data)
+                get_repo("mcp_function").insert_update(info, **tool_data)
                 stats["tools"] += 1
 
         # Load resources
@@ -122,7 +120,7 @@ def load_mcp_configuration_into_models(
                     "is_async": resource.get("is_async", False),
                     "updated_by": updated_by,
                 }
-                insert_update_mcp_function(info, **resource_data)
+                get_repo("mcp_function").insert_update(info, **resource_data)
                 stats["resources"] += 1
 
         # Load prompts
@@ -145,7 +143,7 @@ def load_mcp_configuration_into_models(
                     "is_async": prompt.get("is_async", False),
                     "updated_by": updated_by,
                 }
-                insert_update_mcp_function(info, **prompt_data)
+                get_repo("mcp_function").insert_update(info, **prompt_data)
                 stats["prompts"] += 1
 
         # Load module links as functions with module information
@@ -167,7 +165,7 @@ def load_mcp_configuration_into_models(
                     "updated_by": updated_by,
                     # Don't include 'data' field to avoid overwriting existing data
                 }
-                insert_update_mcp_function(info, **link_data)
+                get_repo("mcp_function").insert_update(info, **link_data)
 
         # Load modules
         if "modules" in mcp_configuration:
@@ -202,7 +200,7 @@ def load_mcp_configuration_into_models(
                         setting_insert_data["setting"][k] = v
 
             # Create the shared setting and get the setting_id from the returned object
-            mcp_setting = insert_update_mcp_setting(info, **setting_insert_data)
+            mcp_setting = get_repo("mcp_setting").insert_update(info, **setting_insert_data)
             setting_id = mcp_setting.setting_id
             stats["settings"] += 1
 
@@ -222,7 +220,7 @@ def load_mcp_configuration_into_models(
                     "source": module.get("source", kwargs.get("source", "")),
                     "updated_by": updated_by,
                 }
-                insert_update_mcp_module(info, **module_data)
+                get_repo("mcp_module").insert_update(info, **module_data)
                 stats["modules"] += 1
 
         info.context["logger"].info(f"Successfully loaded MCP configuration: {stats}")

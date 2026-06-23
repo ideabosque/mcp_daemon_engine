@@ -9,7 +9,6 @@ import logging
 from typing import Any, Dict, List
 
 from graphene import Schema
-from silvaengine_dynamodb_base import BaseModel
 from silvaengine_utility import Graphql, Invoker
 
 from .handlers.config import Config
@@ -128,19 +127,8 @@ class MCPDaemonEngine(Graphql):
         self.logger = logger
         self.setting = setting
 
-        if (
-            setting.get("region_name")
-            and setting.get("aws_access_key_id")
-            and setting.get("aws_secret_access_key")
-        ):
-            if hasattr(BaseModel.Meta, "region"):
-                BaseModel.Meta.region = setting.get("region_name")
-            if hasattr(BaseModel.Meta, "aws_access_key_id"):
-                BaseModel.Meta.aws_access_key_id = setting.get("aws_access_key_id")
-            if hasattr(BaseModel.Meta, "aws_secret_access_key"):
-                BaseModel.Meta.aws_secret_access_key = setting.get(
-                    "aws_secret_access_key"
-                )
+        # BaseModel.Meta setup is now owned by Config._initialize_dynamodb_meta(),
+        # called during Config.initialize(). No need to set it here.
 
     def mcp_daemon_graphql(self, **params: Dict[str, Any]) -> Any:
         self._apply_partition_defaults(params)

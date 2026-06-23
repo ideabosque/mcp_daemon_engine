@@ -30,8 +30,8 @@ from silvaengine_dynamodb_base import (
 )
 from silvaengine_utility import method_cache
 from silvaengine_utility.serializer import Serializer
-from ..handlers.config import Config
-from ..types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
+from ...handlers.config import Config
+from ...types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
 
 
 class MCPTypeIndex(LocalSecondaryIndex):
@@ -110,7 +110,7 @@ def purge_cache():
                 result = original_function(*args, **kwargs)
 
                 # Then purge cache after successful operation
-                from ..models.cache import purge_entity_cascading_cache
+                from .cache import purge_entity_cascading_cache
 
                 # Get entity keys from kwargs or entity parameter
                 entity_keys = {}
@@ -180,7 +180,7 @@ def get_mcp_function_call_type(
 ) -> MCPFunctionCallType:
     try:
         if mcp_function_call_model.content_in_s3:
-            from ..handlers.config import Config
+            from ...handlers.config import Config
 
             s3_key = (
                 f"mcp_content/{mcp_function_call_model.mcp_function_call_uuid}.json"

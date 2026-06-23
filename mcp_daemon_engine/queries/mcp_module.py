@@ -11,15 +11,14 @@ from graphene import ResolveInfo
 from silvaengine_utility import method_cache
 
 from ..handlers.config import Config
-
-from ..models import mcp_module
+from ..models.repositories import get_repo
 from ..types.mcp_module import MCPModuleListType, MCPModuleType
 
 
 def resolve_mcp_module(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPModuleType | None:
-    return mcp_module.resolve_mcp_module(info, **kwargs)
+    return get_repo("mcp_module").resolve_single(info, **kwargs)
 
 
 @method_cache(
@@ -30,4 +29,4 @@ def resolve_mcp_module(
 def resolve_mcp_module_list(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPModuleListType:
-    return mcp_module.resolve_mcp_module_list(info, **kwargs)
+    return get_repo("mcp_module").list(info, **kwargs)

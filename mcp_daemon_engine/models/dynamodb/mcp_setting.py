@@ -27,8 +27,8 @@ from silvaengine_dynamodb_base import (
 from silvaengine_utility import method_cache
 from silvaengine_utility.serializer import Serializer
 
-from ..handlers.config import Config
-from ..types.mcp_setting import MCPSettingListType, MCPSettingType
+from ...handlers.config import Config
+from ...types.mcp_setting import MCPSettingListType, MCPSettingType
 
 
 class MCPSettingModel(BaseModel):
@@ -52,7 +52,7 @@ def purge_cache():
                 result = original_function(*args, **kwargs)
 
                 # Then purge cache after successful operation
-                from ..models.cache import purge_entity_cascading_cache
+                from .cache import purge_entity_cascading_cache
 
                 # Get entity keys from kwargs or entity parameter
                 entity_keys = {}

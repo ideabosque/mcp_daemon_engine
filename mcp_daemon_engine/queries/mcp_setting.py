@@ -11,15 +11,14 @@ from graphene import ResolveInfo
 from silvaengine_utility import method_cache
 
 from ..handlers.config import Config
-
-from ..models import mcp_setting
+from ..models.repositories import get_repo
 from ..types.mcp_setting import MCPSettingListType, MCPSettingType
 
 
 def resolve_mcp_setting(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPSettingType | None:
-    return mcp_setting.resolve_mcp_setting(info, **kwargs)
+    return get_repo("mcp_setting").resolve_single(info, **kwargs)
 
 
 @method_cache(
@@ -30,4 +29,4 @@ def resolve_mcp_setting(
 def resolve_mcp_setting_list(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPSettingListType:
-    return mcp_setting.resolve_mcp_setting_list(info, **kwargs)
+    return get_repo("mcp_setting").list(info, **kwargs)

@@ -28,8 +28,8 @@ from silvaengine_utility import method_cache
 from silvaengine_utility.serializer import Serializer
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from ..handlers.config import Config
-from ..types.mcp_module import MCPModuleListType, MCPModuleType
+from ...handlers.config import Config
+from ...types.mcp_module import MCPModuleListType, MCPModuleType
 
 
 class MCPPackgeIndex(LocalSecondaryIndex):
@@ -71,7 +71,7 @@ def purge_cache():
                 result = original_function(*args, **kwargs)
 
                 # Then purge cache after successful operation
-                from ..models.cache import (
+                from .cache import (
                     _extract_module_setting_ids,
                     purge_entity_cascading_cache,
                 )

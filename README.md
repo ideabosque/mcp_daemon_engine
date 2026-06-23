@@ -37,3 +37,27 @@ python -m silvaengine_gateway
 `mcp_daemon_engine` is loaded by the gateway route manifest. It should be
 initialized through `mcp_daemon_engine.handlers.config:Config` and called through
 the dispatch functions above.
+
+## Dual-Backend Persistence
+
+`mcp_daemon_engine` supports two selectable persistence backends for its 4 metadata
+entities (`MCPFunction`, `MCPModule`, `MCPSetting`, `MCPFunctionCall`):
+
+- **DynamoDB** (`db_backend="dynamodb"`, default) — PynamoDB models under `models/dynamodb/`.
+- **PostgreSQL** (`db_backend="postgresql"`) — SQLAlchemy models under `models/postgresql/`,
+  Alembic migrations under `migration/alembic/`.
+
+A repository dispatch boundary at `models/repositories/` isolates GraphQL queries,
+mutations, and the configuration-loading handler from backend-specific persistence
+details. All metadata persistence routes through `get_repo(entity_type)`.
+
+**S3 (package upload + content offload), the MCP runtime (SSE/stdio/JSON-RPC), the
+external-MCP proxy, and dynamic tool-module loading are NOT backend-selectable.**
+They work identically under both `DB_BACKEND` values. S3 stays initialized even in
+PostgreSQL mode when `funct_bucket_name` is set.
+
+See:
+- `docs/DUAL_BACKEND_DEVELOPMENT_PLAN.md` — full development plan and phase status.
+- `docs/DUAL_BACKEND_CONFIG.md` — backend selection and configuration guide.
+- `docs/POSTGRESQL_SETUP.md` — PostgreSQL setup and migration guide.
+- `docs/PHASE0_ENTITY_INVENTORY.md` — per-field DynamoDB→PostgreSQL type mapping.

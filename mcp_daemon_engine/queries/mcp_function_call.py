@@ -11,15 +11,14 @@ from graphene import ResolveInfo
 from silvaengine_utility import method_cache
 
 from ..handlers.config import Config
-
-from ..models import mcp_function_call
+from ..models.repositories import get_repo
 from ..types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
 
 
 def resolve_mcp_function_call(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPFunctionCallType | None:
-    return mcp_function_call.resolve_mcp_function_call(info, **kwargs)
+    return get_repo("mcp_function_call").resolve_single(info, **kwargs)
 
 
 @method_cache(
@@ -30,4 +29,4 @@ def resolve_mcp_function_call(
 def resolve_mcp_function_call_list(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPFunctionCallListType:
-    return mcp_function_call.resolve_mcp_function_call_list(info, **kwargs)
+    return get_repo("mcp_function_call").list(info, **kwargs)

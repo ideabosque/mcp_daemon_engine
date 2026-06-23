@@ -49,7 +49,7 @@ def _extract_module_setting_ids(raw_classes: Any) -> Set[str]:
 
 @lru_cache(maxsize=1)
 def _get_cascading_cache_purger() -> CascadingCachePurger:
-    from ..handlers.config import Config
+    from ...handlers.config import Config
 
     return CascadingCachePurger(
         CacheConfigResolvers(

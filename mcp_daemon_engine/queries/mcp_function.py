@@ -11,15 +11,14 @@ from graphene import ResolveInfo
 from silvaengine_utility import method_cache
 
 from ..handlers.config import Config
-
-from ..models import mcp_function
+from ..models.repositories import get_repo
 from ..types.mcp_function import MCPFunctionListType, MCPFunctionType
 
 
 def resolve_mcp_function(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPFunctionType | None:
-    return mcp_function.resolve_mcp_function(info, **kwargs)
+    return get_repo("mcp_function").resolve_single(info, **kwargs)
 
 
 @method_cache(
@@ -30,4 +29,4 @@ def resolve_mcp_function(
 def resolve_mcp_function_list(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> MCPFunctionListType:
-    return mcp_function.resolve_mcp_function_list(info, **kwargs)
+    return get_repo("mcp_function").list(info, **kwargs)

@@ -20,8 +20,6 @@ from pydantic import AnyUrl
 
 from silvaengine_utility import Debugger, JSONSnakeCase, Serializer
 
-from ..models import utils
-
 MCP_FUNCTION_LIST = """query mcpFunctionList(
         $pageNumber: Int,
         $limit: Int,
@@ -103,39 +101,51 @@ class Config:
     Manages shared configuration variables across the application.
     """
 
+    # Backend selection: "dynamodb" (default) or "postgresql"
+    DB_BACKEND: str = "dynamodb"
+
+    # PostgreSQL session (only initialized when DB_BACKEND == "postgresql")
+    db_session = None
+
     # Cache Configuration
     CACHE_TTL = 1800
     CACHE_ENABLED = True
 
     CACHE_NAMES = {
-        "models": "mcp_daemon_engine.models",
+        "models": "mcp_daemon_engine.models.dynamodb",
         "queries": "mcp_daemon_engine.queries",
     }
 
-    CACHE_ENTITY_CONFIG = {
+    # ------------------------------------------------------------------
+    # Cache entity metadata — backend-aware.
+    #
+    # The PostgreSQL repositories do not currently use @method_cache,
+    # so CACHE_ENTITY_CONFIG_POSTGRESQL is intentionally empty.
+    # ------------------------------------------------------------------
+    CACHE_ENTITY_CONFIG_DYNAMODB = {
         "mcp_function": {
-            "module": "mcp_daemon_engine.models.mcp_function",
+            "module": "mcp_daemon_engine.models.dynamodb.mcp_function",
             "model_class": "MCPFunctionModel",
             "getter": "get_mcp_function",
             "list_resolver": "mcp_daemon_engine.queries.mcp_function.resolve_mcp_function_list",
             "cache_keys": ["context:partition_key", "key:name"],
         },
         "mcp_module": {
-            "module": "mcp_daemon_engine.models.mcp_module",
+            "module": "mcp_daemon_engine.models.dynamodb.mcp_module",
             "model_class": "MCPModuleModel",
             "getter": "get_mcp_module",
             "list_resolver": "mcp_daemon_engine.queries.mcp_module.resolve_mcp_module_list",
             "cache_keys": ["context:partition_key", "key:module_name"],
         },
         "mcp_function_call": {
-            "module": "mcp_daemon_engine.models.mcp_function_call",
+            "module": "mcp_daemon_engine.models.dynamodb.mcp_function_call",
             "model_class": "MCPFunctionCallModel",
             "getter": "get_mcp_function_call",
             "list_resolver": "mcp_daemon_engine.queries.mcp_function_call.resolve_mcp_function_call_list",
             "cache_keys": ["context:partition_key", "key:mcp_function_call_uuid"],
         },
         "mcp_setting": {
-            "module": "mcp_daemon_engine.models.mcp_setting",
+            "module": "mcp_daemon_engine.models.dynamodb.mcp_setting",
             "model_class": "MCPSettingModel",
             "getter": "get_mcp_setting",
             "list_resolver": "mcp_daemon_engine.queries.mcp_setting.resolve_mcp_setting_list",
@@ -143,7 +153,20 @@ class Config:
         },
     }
 
-    CACHE_RELATIONSHIPS = {
+    # PostgreSQL cache config — empty until PG repos opt into caching.
+    CACHE_ENTITY_CONFIG_POSTGRESQL: Dict[str, Dict[str, Any]] = {}
+
+    @classmethod
+    def get_cache_entity_config(cls) -> Dict[str, Dict[str, Any]]:
+        """Return cache metadata for the active DB_BACKEND."""
+        if cls.DB_BACKEND == "postgresql":
+            return cls.CACHE_ENTITY_CONFIG_POSTGRESQL
+        return cls.CACHE_ENTITY_CONFIG_DYNAMODB
+
+    # ------------------------------------------------------------------
+    # Entity cache dependency relationships — backend-aware.
+    # ------------------------------------------------------------------
+    CACHE_RELATIONSHIPS_DYNAMODB = {
         "mcp_module": [
             {
                 "entity_type": "mcp_function",
@@ -163,6 +186,16 @@ class Config:
             }
         ],
     }
+
+    # PostgreSQL cascade relationships — empty until PG repos cache list resolvers.
+    CACHE_RELATIONSHIPS_POSTGRESQL: Dict[str, List[Dict[str, Any]]] = {}
+
+    @classmethod
+    def get_cache_relationships(cls) -> Dict[str, List[Dict[str, Any]]]:
+        """Return cascade-invalidation relationships for the active backend."""
+        if cls.DB_BACKEND == "postgresql":
+            return cls.CACHE_RELATIONSHIPS_POSTGRESQL
+        return cls.CACHE_RELATIONSHIPS_DYNAMODB
 
     setting: Dict[str, Any] = {}
 
@@ -205,6 +238,11 @@ class Config:
     def initialize(cls, logger: logging.Logger, setting: Dict[str, Any]) -> None:
         """
         Initialize configuration setting.
+
+        Backend selection is driven by ``setting["db_backend"]``:
+        - ``dynamodb`` (default): preserves current PynamoDB behavior.
+        - ``postgresql``: uses SQLAlchemy scoped session for persistence.
+
         Args:
             logger (logging.Logger): Logger instance for logging.
             setting (Dict[str, Any]): Configuration dictionary.
@@ -214,7 +252,18 @@ class Config:
             cls.setting = setting
             cls._set_parameters(setting)
             cls._setup_function_paths(setting)
-            cls._initialize_aws_services(logger, setting)
+
+            # Read backend selection (deployment-time, not per request)
+            cls.DB_BACKEND = str(setting.get("db_backend", "dynamodb")).lower()
+
+            if cls.DB_BACKEND == "dynamodb":
+                cls._initialize_aws_services(logger, setting)
+                cls._initialize_dynamodb_meta(setting)
+            elif cls.DB_BACKEND == "postgresql":
+                cls._initialize_optional_aws_services(setting)
+                cls._initialize_db_session(setting)
+            else:
+                raise ValueError(f"Unknown db_backend: {cls.DB_BACKEND}")
 
             if cls.transport == "sse" and cls.auth_provider == "local":
                 cls._USERS = cls._load()
@@ -222,7 +271,9 @@ class Config:
             if setting.get("initialize_tables"):
                 cls._initialize_tables(logger)
 
-            logger.info("Configuration initialized successfully.")
+            logger.info(
+                f"Configuration initialized successfully (db_backend={cls.DB_BACKEND})."
+            )
         except Exception as e:
             logger.exception("Failed to initialize configuration.")
             raise e
@@ -328,12 +379,123 @@ class Config:
             raise e
 
     @classmethod
+    def _initialize_dynamodb_meta(cls, setting: Dict[str, Any]) -> None:
+        """Initialize PynamoDB BaseModel.Meta credentials from setting."""
+        from silvaengine_dynamodb_base import BaseModel
+
+        if (
+            setting.get("region_name")
+            and setting.get("aws_access_key_id")
+            and setting.get("aws_secret_access_key")
+        ):
+            BaseModel.Meta.region = setting.get("region_name")
+            BaseModel.Meta.aws_access_key_id = setting.get("aws_access_key_id")
+            BaseModel.Meta.aws_secret_access_key = setting.get(
+                "aws_secret_access_key"
+            )
+
+    @classmethod
+    def _initialize_optional_aws_services(
+        cls, setting: Dict[str, Any]
+    ) -> None:
+        """Initialize AWS services in PG mode.
+
+        S3 stays initialized unconditionally when funct_bucket_name is set
+        (mcp_daemon_engine needs S3 for package uploads + content offload even
+        in PG mode). Other AWS clients (Cognito, Lambda) remain conditional on
+        credentials + auth provider.
+        """
+        try:
+            creds_present = all(
+                setting.get(k)
+                for k in [
+                    "region_name",
+                    "aws_access_key_id",
+                    "aws_secret_access_key",
+                ]
+            )
+            if creds_present:
+                aws_credentials = {
+                    "region_name": setting["region_name"],
+                    "aws_access_key_id": setting["aws_access_key_id"],
+                    "aws_secret_access_key": setting["aws_secret_access_key"],
+                }
+            else:
+                aws_credentials = {}
+
+            # S3 — unconditional when funct_bucket_name is set
+            if cls.funct_bucket_name:
+                cls.aws_s3 = boto3.client(
+                    "s3",
+                    **aws_credentials,
+                    config=boto3.session.Config(signature_version="s3v4"),
+                )
+
+            # Cognito — conditional on creds + auth_provider
+            if (
+                creds_present
+                and all(
+                    setting.get(k) for k in ["region_name", "cognito_user_pool_id"]
+                )
+                and cls.auth_provider == "cognito"
+            ):
+                cls.issuer = f"https://cognito-idp.{setting['region_name']}.amazonaws.com/{setting['cognito_user_pool_id']}"
+                cls.jwks_endpoint = (
+                    setting.get("cognito_jwks_url")
+                    or f"{cls.issuer}/.well-known/jwks.json"
+                )
+                cls.aws_cognito_idp = boto3.client(
+                    "cognito-idp", region_name=setting["region_name"]
+                )
+
+            # Lambda — conditional on creds + api_gateway auth
+            if creds_present and cls.auth_provider == "api_gateway":
+                cls.aws_lambda = boto3.client("lambda", **aws_credentials)
+
+        except Exception as e:
+            cls.logger.exception("Failed to initialize optional AWS services.")
+            raise e
+
+    @classmethod
+    def _initialize_db_session(cls, setting: Dict[str, Any]) -> None:
+        """Initialize the PostgreSQL database session using SQLAlchemy.
+
+        Expected setting keys: db_host, db_port, db_user, db_password, db_schema.
+        """
+        from urllib.parse import quote_plus
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import scoped_session, sessionmaker
+
+        password = quote_plus(setting["db_password"])
+        connection_string = (
+            f"postgresql+psycopg2://{setting['db_user']}:{password}"
+            f"@{setting['db_host']}:{setting['db_port']}/{setting['db_schema']}"
+        )
+
+        engine = create_engine(
+            connection_string,
+            pool_recycle=7200,
+            pool_size=10,
+            pool_pre_ping=True,
+            echo=False,
+        )
+
+        cls.db_session = scoped_session(
+            sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        )
+
+    @classmethod
     def _initialize_tables(cls, logger: logging.Logger) -> None:
-        """
-        Initialize database tables by calling the utils._initialize_tables() method.
-        This is an internal method used during configuration setup.
-        """
-        utils.initialize_tables(logger)
+        """Initialize database tables by calling the backend-appropriate method."""
+        if cls.DB_BACKEND == "dynamodb":
+            from ..models.dynamodb.utils import initialize_tables
+
+            initialize_tables(logger)
+        elif cls.DB_BACKEND == "postgresql":
+            from ..models.postgresql.utils import initialize_tables as pg_init
+
+            pg_init(logger, cls.db_session)
 
     @classmethod
     def _load(cls) -> dict[str, LocalUser]:
@@ -848,19 +1010,9 @@ class Config:
         return cls.CACHE_ENABLED
 
     @classmethod
-    def get_cache_entity_config(cls) -> Dict[str, Dict[str, Any]]:
-        """Get cache configuration metadata for each entity type."""
-        return cls.CACHE_ENTITY_CONFIG
-
-    @classmethod
-    def get_cache_relationships(cls) -> Dict[str, List[Dict[str, Any]]]:
-        """Get entity cache dependency relationships."""
-        return cls.CACHE_RELATIONSHIPS
-
-    @classmethod
     def get_entity_children(cls, entity_type: str) -> List[Dict[str, Any]]:
-        """Get child entities for a specific entity type."""
-        return cls.CACHE_RELATIONSHIPS.get(entity_type, [])
+        """Get child entities for a specific entity type (active backend)."""
+        return cls.get_cache_relationships().get(entity_type, [])
 
 
 def _dispatch_internal_graphql(**params: Dict[str, Any]) -> Any:

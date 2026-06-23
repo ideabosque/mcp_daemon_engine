@@ -9,7 +9,7 @@ from typing import Any, Dict
 from graphene import Boolean, Field, Mutation, String
 from silvaengine_utility import JSONCamelCase
 
-from ..models.mcp_setting import delete_mcp_setting, insert_update_mcp_setting
+from ..models.repositories import get_repo
 from ..types.mcp_setting import MCPSettingType
 
 
@@ -26,7 +26,7 @@ class InsertUpdateMcpSetting(Mutation):
         root: Any, info: Any, **kwargs: Dict[str, Any]
     ) -> "InsertUpdateMcpSetting":
         try:
-            mcp_setting = insert_update_mcp_setting(info, **kwargs)
+            mcp_setting = get_repo("mcp_setting").insert_update(info, **kwargs)
         except Exception as e:
             log = traceback.format_exc()
             info.context.get("logger").error(log)
@@ -44,7 +44,7 @@ class DeleteMcpSetting(Mutation):
     @staticmethod
     def mutate(root: Any, info: Any, **kwargs: Dict[str, Any]) -> "DeleteMcpSetting":
         try:
-            ok = delete_mcp_setting(info, **kwargs)
+            ok = get_repo("mcp_setting").delete(info, **kwargs)
         except Exception as e:
             log = traceback.format_exc()
             info.context.get("logger").error(log)
