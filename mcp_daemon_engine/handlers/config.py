@@ -698,7 +698,7 @@ class Config:
                     "partition_key": partition_key,
                 },
                 query=MCP_FUNCTION_LIST,
-                variables={},
+                variables={"pageNumber": 1, "limit": 1000},
             )
             response = Serializer.json_loads(response.get("body", response))
 

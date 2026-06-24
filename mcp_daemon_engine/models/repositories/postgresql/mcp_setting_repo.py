@@ -104,6 +104,16 @@ class MCPSettingPGRepository(EntityRepository):
         )
         setting_id = kwargs.get("setting_id")
 
+        # Auto-generate setting_id when not supplied, mirroring the DynamoDB
+        # insert_update_decorator (range_key_required=False) so callers like
+        # load_mcp_configuration_into_models can create a shared setting without
+        # specifying an id. Same 20-digit format for cross-backend consistency.
+        if not setting_id:
+            import uuid
+
+            setting_id = f"{uuid.uuid1().int % (10**20):020d}"
+            kwargs["setting_id"] = setting_id
+
         try:
             if setting_id:
                 # Update existing

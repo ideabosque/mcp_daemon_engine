@@ -199,9 +199,15 @@ def load_mcp_configuration_into_models(
                     if k in setting_insert_data["setting"].keys():
                         setting_insert_data["setting"][k] = v
 
-            # Create the shared setting and get the setting_id from the returned object
+            # Create the shared setting and get the setting_id from the result.
+            # The DynamoDB repo returns a typed object (.setting_id); the
+            # PostgreSQL repo returns a normalized dict (["setting_id"]).
             mcp_setting = get_repo("mcp_setting").insert_update(info, **setting_insert_data)
-            setting_id = mcp_setting.setting_id
+            setting_id = (
+                mcp_setting["setting_id"]
+                if isinstance(mcp_setting, dict)
+                else mcp_setting.setting_id
+            )
             stats["settings"] += 1
 
             for module in mcp_configuration["modules"]:
