@@ -7,7 +7,7 @@ __author__ = "bibow"
 import time
 from typing import Any, Dict
 
-from graphene import DateTime, Field, Int, ObjectType, ResolveInfo, String
+from graphene import Boolean, DateTime, Field, Int, ObjectType, ResolveInfo, String
 
 from .mutations.mcp_configuration import LoadMcpConfiguration
 from .mutations.mcp_external import SyncExternalMcpServer
