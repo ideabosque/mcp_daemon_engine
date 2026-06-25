@@ -74,6 +74,7 @@ class MCPFunctionPGRepository(EntityRepository):
         module_name = filters.get("module_name")
         class_name = filters.get("class_name")
         function_name = filters.get("function_name")
+        enabled = filters.get("enabled")
 
         query = session.query(MCPFunctionModel)
         if partition_key:
@@ -90,6 +91,15 @@ class MCPFunctionPGRepository(EntityRepository):
             query = query.filter(MCPFunctionModel.class_name == class_name)
         if function_name:
             query = query.filter(MCPFunctionModel.function_name == function_name)
+        if enabled is not None:
+            if enabled:
+                # Treat NULL as True (default-enabled) — match True or NULL
+                from sqlalchemy import or_
+                query = query.filter(
+                    or_(MCPFunctionModel.enabled == True, MCPFunctionModel.enabled.is_(None))
+                )
+            else:
+                query = query.filter(MCPFunctionModel.enabled == False)
 
         total = query.count()
         offset = (page_number - 1) * limit
@@ -140,6 +150,7 @@ class MCPFunctionPGRepository(EntityRepository):
                         "function_name",
                         "return_type",
                         "is_async",
+                        "enabled",
                     ]
                     for field in field_map:
                         if field in kwargs:
@@ -194,6 +205,7 @@ class MCPFunctionPGRepository(EntityRepository):
             "function_name",
             "return_type",
             "is_async",
+            "enabled",
         ]:
             if key in kwargs:
                 cols[key] = kwargs[key]

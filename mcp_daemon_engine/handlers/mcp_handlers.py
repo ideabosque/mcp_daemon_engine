@@ -51,8 +51,8 @@ def load_mcp_configuration_into_models(
         from ..models.repositories import get_repo
         from .mcp_utility import get_mcp_configuration_by_module
 
-        partition_key = info.context["partition_key"]
-        info.context["logger"].info(
+        partition_key = info.context.get("partition_key")
+        (info.context.get("logger") or Config.logger).info(
             f"Loading MCP configuration for endpoint: {partition_key}"
         )
         updated_by = kwargs["updated_by"]
@@ -66,7 +66,7 @@ def load_mcp_configuration_into_models(
                 kwargs["module_name"],
                 source=kwargs.get("source"),
             )
-            info.context["logger"].info(
+            (info.context.get("logger") or Config.logger).info(
                 f"Loading MCP configuration for package: {kwargs.get('package_name', '')}, module: {kwargs['module_name']}"
             )
         else:
@@ -76,7 +76,7 @@ def load_mcp_configuration_into_models(
 
         # Load tools
         if "tools" in mcp_configuration:
-            info.context["logger"].info(
+            (info.context.get("logger") or Config.logger).info(
                 f"Loading {len(mcp_configuration['tools'])} tools"
             )
             for tool in mcp_configuration["tools"]:
@@ -92,9 +92,10 @@ def load_mcp_configuration_into_models(
                     },
                     "annotations": tool.get("annotations"),
                     "is_async": tool.get("is_async", False),
+                    "enabled": tool.get("enabled", True),
                     "updated_by": updated_by,
                 }
-                info.context["logger"].info(
+                (info.context.get("logger") or Config.logger).info(
                     f"Loading tool '{tool.get('name')}' with data: {tool_data['data']}"
                 )
                 get_repo("mcp_function").insert_update(info, **tool_data)
@@ -102,7 +103,7 @@ def load_mcp_configuration_into_models(
 
         # Load resources
         if "resources" in mcp_configuration:
-            info.context["logger"].info(
+            (info.context.get("logger") or Config.logger).info(
                 f"Loading {len(mcp_configuration['resources'])} resources"
             )
             for resource in mcp_configuration["resources"]:
@@ -118,6 +119,7 @@ def load_mcp_configuration_into_models(
                     },
                     "annotations": resource.get("annotations"),
                     "is_async": resource.get("is_async", False),
+                    "enabled": resource.get("enabled", True),
                     "updated_by": updated_by,
                 }
                 get_repo("mcp_function").insert_update(info, **resource_data)
@@ -125,7 +127,7 @@ def load_mcp_configuration_into_models(
 
         # Load prompts
         if "prompts" in mcp_configuration:
-            info.context["logger"].info(
+            (info.context.get("logger") or Config.logger).info(
                 f"Loading {len(mcp_configuration['prompts'])} prompts"
             )
             for prompt in mcp_configuration["prompts"]:
@@ -141,6 +143,7 @@ def load_mcp_configuration_into_models(
                     },
                     "annotations": prompt.get("annotations"),
                     "is_async": prompt.get("is_async", False),
+                    "enabled": prompt.get("enabled", True),
                     "updated_by": updated_by,
                 }
                 get_repo("mcp_function").insert_update(info, **prompt_data)
@@ -148,7 +151,7 @@ def load_mcp_configuration_into_models(
 
         # Load module links as functions with module information
         if "module_links" in mcp_configuration:
-            info.context["logger"].info(
+            (info.context.get("logger") or Config.logger).info(
                 f"Loading {len(mcp_configuration['module_links'])} module links"
             )
             for link in mcp_configuration["module_links"]:
@@ -162,6 +165,7 @@ def load_mcp_configuration_into_models(
                     "function_name": link.get("function_name"),
                     "return_type": link.get("return_type", "text"),
                     "is_async": link.get("is_async", False),
+                    "enabled": link.get("enabled", True),
                     "updated_by": updated_by,
                     # Don't include 'data' field to avoid overwriting existing data
                 }
@@ -169,7 +173,7 @@ def load_mcp_configuration_into_models(
 
         # Load modules
         if "modules" in mcp_configuration:
-            info.context["logger"].info(
+            (info.context.get("logger") or Config.logger).info(
                 f"Loading {len(mcp_configuration['modules'])} modules"
             )
 
@@ -229,12 +233,12 @@ def load_mcp_configuration_into_models(
                 get_repo("mcp_module").insert_update(info, **module_data)
                 stats["modules"] += 1
 
-        info.context["logger"].info(f"Successfully loaded MCP configuration: {stats}")
+        (info.context.get("logger") or Config.logger).info(f"Successfully loaded MCP configuration: {stats}")
         return stats
 
     except Exception as e:
         log = traceback.format_exc()
-        info.context["logger"].error(f"Failed to load MCP configuration: {log}")
+        (info.context.get("logger") or Config.logger).error(f"Failed to load MCP configuration: {log}")
         raise e
 
 
@@ -552,7 +556,7 @@ def process_mcp_package(info: ResolveInfo, **kwargs: Dict[str, Any]) -> Dict[str
     Returns:
         Dict with ``tools``, ``resources``, ``prompts``, ``modules``, ``settings`` counts.
     """
-    partition_key = info.context["partition_key"]
+    partition_key = info.context.get("partition_key")
     s3_key = kwargs["s3_key"]
     module_name = kwargs["module_name"]
     package_name = kwargs["package_name"]

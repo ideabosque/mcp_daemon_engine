@@ -67,6 +67,7 @@ class Query(ObjectType):
         module_name=String(required=False),
         class_name=String(required=False),
         function_name=String(required=False),
+        enabled=Boolean(required=False),
     )
 
     mcp_function_call = Field(

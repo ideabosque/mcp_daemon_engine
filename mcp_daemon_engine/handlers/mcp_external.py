@@ -198,7 +198,7 @@ def sync_external_mcp_server(
         module_name=server_name,
     )
 
-    partition_key = info.context["partition_key"]
+    partition_key = info.context.get("partition_key")
     Config.clear_mcp_configuration_cache(partition_key)
 
     load_kwargs = {

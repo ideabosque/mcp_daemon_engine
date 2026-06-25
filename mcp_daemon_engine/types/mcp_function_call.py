@@ -4,7 +4,7 @@ from __future__ import print_function
 
 __author__ = "bibow"
 
-from graphene import DateTime, Int, List, ObjectType, String, Field
+from graphene import Boolean, DateTime, Int, List, ObjectType, String, Field
 from silvaengine_dynamodb_base import ListObjectType
 from silvaengine_utility import JSONCamelCase
 
@@ -15,6 +15,7 @@ class MCPFunctionCallType(ObjectType):
     mcp_type = String()
     name = String()
     arguments = Field(JSONCamelCase)
+    content_in_s3 = Boolean()
     content = String()
     status = String()
     notes = String()

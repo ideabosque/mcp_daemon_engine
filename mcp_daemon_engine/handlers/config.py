@@ -26,7 +26,8 @@ MCP_FUNCTION_LIST = """query mcpFunctionList(
         $mcpType: String,
         $moduleName: String,
         $className: String,
-        $functionName: String
+        $functionName: String,
+        $enabled: Boolean
     ) {
     mcpFunctionList(
         pageNumber: $pageNumber,
@@ -34,7 +35,8 @@ MCP_FUNCTION_LIST = """query mcpFunctionList(
         mcpType: $mcpType,
         moduleName: $moduleName,
         className: $className,
-        functionName: $functionName
+        functionName: $functionName,
+        enabled: $enabled
     ) {
         pageSize
         pageNumber
@@ -51,6 +53,7 @@ MCP_FUNCTION_LIST = """query mcpFunctionList(
             functionName
             returnType
             isAsync
+            enabled
             updatedBy
             createdAt
             updatedAt
@@ -698,7 +701,7 @@ class Config:
                     "partition_key": partition_key,
                 },
                 query=MCP_FUNCTION_LIST,
-                variables={"pageNumber": 1, "limit": 1000},
+                variables={"pageNumber": 1, "limit": 1000, "enabled": True},
             )
             response = Serializer.json_loads(response.get("body", response))
 
