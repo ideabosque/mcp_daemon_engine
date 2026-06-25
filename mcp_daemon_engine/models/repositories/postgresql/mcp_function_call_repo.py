@@ -221,6 +221,8 @@ class MCPFunctionCallPGRepository(EntityRepository):
             if logger:
                 logger.error(traceback.format_exc())
             raise e
+        finally:
+            Config.db_session.remove()
 
     def _create_row(
         self, info: ResolveInfo, **kwargs: Any
@@ -289,6 +291,8 @@ class MCPFunctionCallPGRepository(EntityRepository):
             if logger:
                 logger.error(traceback.format_exc())
             raise e
+        finally:
+            Config.db_session.remove()
 
     def _purge_cache(
         self,

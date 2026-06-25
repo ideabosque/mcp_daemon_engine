@@ -161,6 +161,8 @@ class MCPSettingPGRepository(EntityRepository):
             if logger:
                 logger.error(traceback.format_exc())
             raise e
+        finally:
+            Config.db_session.remove()
 
     def _create_row(self, info: ResolveInfo, **kwargs: Any) -> MCPSettingModel:
         partition_key = kwargs.get("partition_key") or info.context.get(
@@ -213,6 +215,8 @@ class MCPSettingPGRepository(EntityRepository):
             if logger:
                 logger.error(traceback.format_exc())
             raise e
+        finally:
+            Config.db_session.remove()
 
     def _purge_cache(
         self, info: ResolveInfo, partition_key: str, setting_id: str

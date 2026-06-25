@@ -159,6 +159,8 @@ class MCPModulePGRepository(EntityRepository):
             if logger:
                 logger.error(traceback.format_exc())
             raise e
+        finally:
+            Config.db_session.remove()
 
     def _create_row(self, info: ResolveInfo, **kwargs: Any) -> MCPModuleModel:
         partition_key = kwargs.get("partition_key") or info.context.get(
@@ -216,6 +218,8 @@ class MCPModulePGRepository(EntityRepository):
             if logger:
                 logger.error(traceback.format_exc())
             raise e
+        finally:
+            Config.db_session.remove()
 
     def _purge_cache(
         self,

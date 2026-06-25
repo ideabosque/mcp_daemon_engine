@@ -479,7 +479,9 @@ class Config:
         engine = create_engine(
             connection_string,
             pool_recycle=7200,
-            pool_size=10,
+            pool_size=30,
+            max_overflow=20,
+            pool_timeout=60,
             pool_pre_ping=True,
             echo=False,
         )
