@@ -12,6 +12,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     Index,
+    SmallInteger,
     String,
     Text,
     TIMESTAMP,
@@ -41,7 +42,7 @@ class MCPFunctionModel(Base):
     function_name = Column(String, nullable=True)
     return_type = Column(String, nullable=True)
     is_async = Column(Boolean, nullable=True)
-    enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    status = Column(SmallInteger, nullable=False, default=1, server_default=text("1"))
 
     # Timestamps
     updated_by = Column(String(64), nullable=False)

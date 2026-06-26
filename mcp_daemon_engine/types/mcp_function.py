@@ -21,14 +21,14 @@ class MCPFunctionType(ObjectType):
     function_name = String()
     return_type = String()
     is_async = Boolean()
-    enabled = Boolean()
+    status = Int()
     updated_by = String()
     created_at = DateTime()
     updated_at = DateTime()
 
-    def resolve_enabled(self, info):
-        # Treat None/missing as True (default-enabled)
-        return True if self.enabled is None else self.enabled
+    def resolve_status(self, info):
+        # Treat None/missing as 1 (enabled) — 0=disabled, 1=enabled
+        return 1 if self.status is None else self.status
 
 
 class MCPFunctionListType(ListObjectType):

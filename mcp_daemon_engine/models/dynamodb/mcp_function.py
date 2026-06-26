@@ -13,6 +13,7 @@ from graphene import ResolveInfo
 from pynamodb.attributes import (
     BooleanAttribute,
     MapAttribute,
+    NumberAttribute,
     UnicodeAttribute,
     UTCDateTimeAttribute,
 )
@@ -62,7 +63,7 @@ class MCPFunctionModel(BaseModel):
     function_name = UnicodeAttribute(null=True)
     return_type = UnicodeAttribute(null=True)
     is_async = BooleanAttribute(null=True)
-    enabled = BooleanAttribute(default=True, null=True)
+    status = NumberAttribute(default=1, null=True)
     updated_by = UnicodeAttribute()
     created_at = UTCDateTimeAttribute()
     updated_at = UTCDateTimeAttribute()
@@ -196,12 +197,12 @@ def resolve_mcp_function_list(info: ResolveInfo, **kwargs: Dict[str, Any]) -> An
         the_filters &= MCPFunctionModel.class_name == class_name
     if function_name:
         the_filters &= MCPFunctionModel.function_name == function_name
-    if kwargs.get("enabled") is not None:
-        if kwargs["enabled"]:
-            # enabled=True: include all except explicitly disabled (None means default-enabled)
-            the_filters &= (MCPFunctionModel.enabled != False)
+    if kwargs.get("status") is not None:
+        if kwargs["status"] == 1:
+            # status=1 (enabled): include all except explicitly disabled (None means default-enabled)
+            the_filters &= (MCPFunctionModel.status != 0)
         else:
-            the_filters &= (MCPFunctionModel.enabled == False)
+            the_filters &= (MCPFunctionModel.status == 0)
     if the_filters is not None:
         args.append(the_filters)
 
@@ -239,7 +240,7 @@ def insert_update_mcp_function(info: ResolveInfo, **kwargs: Dict[str, Any]) -> N
             "function_name",
             "return_type",
             "is_async",
-            "enabled",
+            "status",
         ]:
             if key in kwargs:
                 cols[key] = kwargs[key]
@@ -267,7 +268,7 @@ def insert_update_mcp_function(info: ResolveInfo, **kwargs: Dict[str, Any]) -> N
         "function_name": MCPFunctionModel.function_name,
         "return_type": MCPFunctionModel.return_type,
         "is_async": MCPFunctionModel.is_async,
-        "enabled": MCPFunctionModel.enabled,
+        "status": MCPFunctionModel.status,
     }
 
     for key, field in field_map.items():

@@ -92,7 +92,7 @@ def load_mcp_configuration_into_models(
                     },
                     "annotations": tool.get("annotations"),
                     "is_async": tool.get("is_async", False),
-                    "enabled": tool.get("enabled", True),
+                    "status": tool.get("status", 1),
                     "updated_by": updated_by,
                 }
                 (info.context.get("logger") or Config.logger).info(
@@ -119,7 +119,7 @@ def load_mcp_configuration_into_models(
                     },
                     "annotations": resource.get("annotations"),
                     "is_async": resource.get("is_async", False),
-                    "enabled": resource.get("enabled", True),
+                    "status": resource.get("status", 1),
                     "updated_by": updated_by,
                 }
                 get_repo("mcp_function").insert_update(info, **resource_data)
@@ -143,7 +143,7 @@ def load_mcp_configuration_into_models(
                     },
                     "annotations": prompt.get("annotations"),
                     "is_async": prompt.get("is_async", False),
-                    "enabled": prompt.get("enabled", True),
+                    "status": prompt.get("status", 1),
                     "updated_by": updated_by,
                 }
                 get_repo("mcp_function").insert_update(info, **prompt_data)
@@ -165,7 +165,7 @@ def load_mcp_configuration_into_models(
                     "function_name": link.get("function_name"),
                     "return_type": link.get("return_type", "text"),
                     "is_async": link.get("is_async", False),
-                    "enabled": link.get("enabled", True),
+                    "status": link.get("status", 1),
                     "updated_by": updated_by,
                     # Don't include 'data' field to avoid overwriting existing data
                 }
