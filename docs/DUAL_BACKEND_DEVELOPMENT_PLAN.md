@@ -49,7 +49,7 @@ mcp_daemon_engine.models.repositories
                mcp_daemon_engine.models.postgresql
                4 SQLAlchemy entity modules, base.py, utils.py
                mcp_daemon_engine.models.repositories.postgresql  (4 repository classes)
-               mcp_daemon_engine/migration/alembic  (4 migrations, 0001-0004)
+               migration/alembic  (repo-root; 4 migrations, 0001-0004)
 
    [unchanged, backend-independent]
    S3 package storage + large-content offload via Config.aws_s3
@@ -146,7 +146,7 @@ Notes on what is **not** present:
 - No `batch_loaders/` directory under either backend — no nested resolvers exist today. The `get_loaders` stub exists only so the seam is forward-compatible.
 - No `models/repositories/utils.py` (rfq_engine's backend-dispatched `combine_all_*` helpers). `mcp_daemon_engine` has no cross-entity combination helpers at the GraphQL layer.
 - No `migration/migrate_dynamodb_to_postgresql.py`. No production data to migrate.
-- The migration tree lives at `mcp_daemon_engine/migration/` (inside the package), **not** at the repo-root `migration/` as in `rfq_engine` / `knowledge_graph_engine`. `POSTGRESQL_SETUP.md` documents `alembic -c mcp_daemon_engine/migration/alembic.ini`. This is a deliberate packaging choice (the daemon is installed as a package, so migrations ship with it); it is not a bug.
+- The migration tree lives at the repo root `migration/`, matching the `rfq_engine` / `knowledge_graph_engine` convention. `POSTGRESQL_SETUP.md` documents `alembic -c migration/alembic.ini`. Migrations are no longer shipped inside the installed Python package; production deploys that need them should copy the tree alongside the package or run migrations from a checkout.
 
 ## Persisted Entities
 
@@ -309,7 +309,7 @@ Completed:
 - Added optional `[postgresql]` extra in `pyproject.toml` (`SQLAlchemy>=1.4`, `psycopg2-binary>=2.9`, `alembic>=1.10`).
 - Added `models/postgresql/base.py` (declarative base, `normalize_row`, `_serialize_value`).
 - Added PostgreSQL `scoped_session` initialization in `Config` (`_initialize_db_session`) and conditional AWS init (`_initialize_optional_aws_services` — keeping `aws_s3` unconditional when `funct_bucket_name` is set).
-- Added Alembic configuration (`mcp_daemon_engine/migration/alembic.ini`, `mcp_daemon_engine/migration/alembic/env.py` with `DATABASE_URL > Config > alembic.ini` fallback).
+- Added Alembic configuration (`migration/alembic.ini`, `migration/alembic/env.py` with `DATABASE_URL > Config > alembic.ini` fallback).
 - Added `models/postgresql/utils.py` with PostgreSQL `initialize_tables`.
 
 Still needed:
@@ -461,4 +461,4 @@ Still required before production readiness:
 5. Add PostgreSQL repository CRUD/list/S3-offload tests against a disposable PostgreSQL (`DATABASE_URL` or `PG_HOST`/`PG_*`), starting with `MCPFunctionCallPGRepository` to exercise JSONB (`arguments`), the `updated_at`-window list query, newest-first ordering, and the S3-offload divergence early.
 6. Add focused DynamoDB compatibility tests for GraphQL resolvers routing through the repository wrappers (runtime behavior parity, beyond the static guard).
 7. Add full backend-agnostic GraphQL contract tests that run the existing DynamoDB suites under `DB_BACKEND=postgresql` as well.
-8. Validate `Config.initialize(..., db_backend="postgresql")` against a real PostgreSQL service and run `alembic -c mcp_daemon_engine/migration/alembic.ini upgrade head`.
+8. Validate `Config.initialize(..., db_backend="postgresql")` against a real PostgreSQL service and run `alembic -c migration/alembic.ini upgrade head`.

@@ -27,7 +27,7 @@ export DATABASE_URL="postgresql+psycopg2://user:password@localhost:5432/mcp_daem
 
 # Run migrations
 cd /path/to/mcp_daemon_engine
-alembic -c mcp_daemon_engine/migration/alembic.ini upgrade head
+alembic -c migration/alembic.ini upgrade head
 ```
 
 Migrations create 4 tables in order:
