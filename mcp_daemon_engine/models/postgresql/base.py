@@ -59,7 +59,11 @@ def _serialize_value(val: Any) -> Any:
     if isinstance(val, UUIDType):
         return str(val)
     if isinstance(val, (datetime.datetime, datetime.date)):
-        return val.isoformat()
+        # Return the datetime object directly — graphene's DateTime scalar
+        # calls .isoformat() itself.  Returning a string here causes
+        # "DateTime cannot represent value" because graphene's serialize()
+        # requires a datetime.datetime / datetime.date instance, not a str.
+        return val
     if isinstance(val, Decimal):
         return float(val)
     if isinstance(val, (list, dict)):
