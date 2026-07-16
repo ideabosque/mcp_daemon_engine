@@ -134,7 +134,23 @@ class MCPDaemonEngine(Graphql):
         self._apply_partition_defaults(params)
         query = params.get("query", "")
         is_config_mutation = any(name in query for name in _CONFIG_MUTATIONS)
-        response = self.execute(self.__class__.build_graphql_schema(), **params)
+
+        # In PostgreSQL mode, set the RLS tenant context for this GraphQL call
+        # and tear down the scoped session afterwards. This is the single funnel
+        # for all MCP PostgreSQL access: direct GraphQL requests, the internal
+        # config-fetch dispatch, and async tool-call persistence all route
+        # through here. No-op in DynamoDB mode.
+        partition_key = params.get("partition_key") or params.get("context", {}).get(
+            "partition_key"
+        )
+        if partition_key and Config.DB_BACKEND == "postgresql":
+            Config._set_rls_context(partition_key)
+
+        try:
+            response = self.execute(self.__class__.build_graphql_schema(), **params)
+        finally:
+            if Config.DB_BACKEND == "postgresql" and Config.db_session:
+                Config.db_session.remove()
 
         if is_config_mutation:
             self._clear_cache_after_successful_mutation(response, params)
