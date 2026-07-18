@@ -9,10 +9,13 @@ from __future__ import print_function
 
 __author__ = "bibow"
 
+import logging
 from typing import Any, Dict, Optional
 
 from ...handlers.config import Config
 from .base import EntityRepository
+
+logger = logging.getLogger(__name__)
 
 
 # --- Repository registry -----------------------------------------------------
@@ -71,27 +74,52 @@ _postgresql_repos_initialized = False
 
 
 def _init_dynamodb_repos() -> None:
-    """Lazily register all DynamoDB repositories."""
+    """Lazily register all DynamoDB repositories.
+
+    The ``initialized`` flag is set only when every repo registered
+    successfully. If any failed (e.g. a transient import error at startup), the
+    flag stays False so the next get_repo() retries instead of leaving the
+    registry permanently missing an entity.
+    """
     global _dynamodb_repos_initialized
     if _dynamodb_repos_initialized:
         return
-    _dynamodb_repos_initialized = True
 
     from .dynamodb import register_all as register_dynamodb
 
-    register_dynamodb(_repo_registry["dynamodb"])
+    failures = register_dynamodb(_repo_registry["dynamodb"])
+    if failures:
+        logger.warning(
+            "DynamoDB repo registration incomplete (%d failed); "
+            "will retry on next access.",
+            len(failures),
+        )
+    else:
+        _dynamodb_repos_initialized = True
 
 
 def _init_postgresql_repos() -> None:
-    """Lazily register all PostgreSQL repositories."""
+    """Lazily register all PostgreSQL repositories.
+
+    See _init_dynamodb_repos: only lock in initialization on full success, so a
+    repo that failed to import once (e.g. mid circular-import at startup) is
+    retried rather than left permanently unregistered.
+    """
     global _postgresql_repos_initialized
     if _postgresql_repos_initialized:
         return
-    _postgresql_repos_initialized = True
 
     from .postgresql import register_all as register_postgresql
 
-    register_postgresql(_repo_registry["postgresql"])
+    failures = register_postgresql(_repo_registry["postgresql"])
+    if failures:
+        logger.warning(
+            "PostgreSQL repo registration incomplete (%d failed); "
+            "will retry on next access.",
+            len(failures),
+        )
+    else:
+        _postgresql_repos_initialized = True
 
 
 def clear_registry() -> None:
