@@ -503,6 +503,14 @@ class Config:
             pg_init(logger, cls.db_session)
 
     @classmethod
+    def _set_rls_context(cls, partition_key: str) -> None:
+        """Set the RLS tenant context for the current PostgreSQL session."""
+        if cls.DB_BACKEND == "postgresql" and cls.db_session and partition_key:
+            from ..utils.rls import set_rls_context
+
+            set_rls_context(cls.db_session, partition_key)
+
+    @classmethod
     def _load(cls) -> dict[str, LocalUser]:
         p = Path(cls.local_user_file).expanduser()
 
