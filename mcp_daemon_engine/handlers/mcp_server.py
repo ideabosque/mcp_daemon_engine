@@ -1,8 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from __future__ import annotations
+"""MCP low-level server integration.
 
-__author__ = "bibow"
+Two dispatch paths coexist:
+
+1. **HTTP transport** (silvaengine_gateway → ``dispatch_mcp`` → ``mcp()``):
+   the request payload is handed to ``process_mcp_message()`` which invokes
+   the plain async handler functions below (``list_tools``, ``call_tool``,
+   ``list_resources``, ``read_resource``, ``list_prompts``, ``get_prompt``)
+   with the real ``partition_key`` from the URL. The SDK ``Server`` object
+   is not used to dispatch — HTTP mode works regardless of SDK version.
+
+2. **stdio transport** (``run_stdio`` → ``server.run(...)``): the SDK's own
+   dispatcher calls the handlers registered on the ``Server`` object. As of
+   MCP SDK **v2** these are registered via constructor kwargs (``on_list_tools``,
+   ``on_call_tool``, …) rather than the removed v1 ``@server.list_tools()``
+   decorators.
+
+The v2 adapters at the bottom of this module wrap the plain handlers into the
+``(ctx, params) -> Result`` shape the v2 SDK expects and are passed to the
+``Server`` constructor. If any adapter kwarg is rejected (older SDK, renamed
+kwarg), we fall back to a bare ``Server(name=…)`` — HTTP dispatch remains
+functional; only stdio-mode dispatch is degraded, with a warning logged.
+"""
+from __future__ import annotations
 
 import logging
 import sys
@@ -31,8 +52,7 @@ from .mcp_utility import (
     get_mcp_configuration_with_retry,
 )
 
-# === MCP SDK Initialization ===
-server = Server("MCP SSE Server")
+_log = logging.getLogger(__name__)
 
 
 def _serialize_resource_result(result: Any, uri: str) -> List[Dict[str, Any]]:
@@ -44,17 +64,15 @@ def _serialize_resource_result(result: Any, uri: str) -> List[Dict[str, Any]]:
         contents = None
 
     if isinstance(contents, list):
-        return [
-            content
-            for content in contents
-            if isinstance(content, dict)
-        ]
+        return [content for content in contents if isinstance(content, dict)]
 
     return [{"uri": uri, "mimeType": "text/plain", "text": str(result), "_meta": {}}]
 
 
-# === Tool Definitions ===
-@server.list_tools()
+# === Plain handlers — called directly by process_mcp_message (HTTP mode) ===
+# The v2 adapters at the bottom of the file wrap these for stdio-mode dispatch.
+
+
 async def list_tools(partition_key: str = "default") -> List[Tool]:
     """List available tools for the given endpoint"""
     config = get_mcp_configuration_with_retry(partition_key)
@@ -71,7 +89,6 @@ async def list_tools(partition_key: str = "default") -> List[Tool]:
     return []
 
 
-@server.call_tool()
 async def call_tool(
     name: str,
     arguments: Optional[Dict[str, Any]],
@@ -108,7 +125,6 @@ async def call_tool(
     return execute_tool_function(partition_key, name, arguments)
 
 
-@server.list_resources()
 async def list_resources(partition_key: str = "default") -> List[Resource]:
     """List available resources for the given endpoint"""
     config = get_mcp_configuration_with_retry(partition_key)
@@ -120,11 +136,8 @@ async def list_resources(partition_key: str = "default") -> List[Resource]:
     ]
 
 
-@server.read_resource()
 async def read_resource(uri: str, partition_key: str = "default") -> Any:
     """Read content of a specific resource"""
-    from .mcp_utility import get_mcp_configuration_with_retry
-
     config = get_mcp_configuration_with_retry(partition_key)
     uri = str(uri).strip()
 
@@ -140,7 +153,6 @@ async def read_resource(uri: str, partition_key: str = "default") -> Any:
     return execute_resource_function(partition_key, uri)
 
 
-@server.list_prompts()
 async def list_prompts(partition_key: str = "default") -> List[Prompt]:
     """List available prompts for the given endpoint"""
     config = get_mcp_configuration_with_retry(partition_key=partition_key)
@@ -165,7 +177,6 @@ async def list_prompts(partition_key: str = "default") -> List[Prompt]:
     return []
 
 
-@server.get_prompt()
 async def get_prompt(
     name: str,
     arguments: Optional[Dict[str, Any]],
@@ -183,6 +194,99 @@ async def get_prompt(
         raise ValueError(f"Unknown prompt: {name}")
 
     return execute_prompt_function(partition_key, name, arguments or {})
+
+
+# === MCP SDK v2 adapters — bridge plain handlers into Server(on_*=...) =====
+# stdio transport is single-tenant with no per-request partition_key, so all
+# adapters use partition_key="default". HTTP mode calls the plain handlers
+# above directly with the real partition_key from the URL.
+
+
+async def _on_list_tools(ctx, params=None):
+    from mcp.types import ListToolsResult
+
+    tools = await list_tools(partition_key="default")
+    return ListToolsResult(tools=list(tools))
+
+
+async def _on_call_tool(ctx, params):
+    from mcp.types import CallToolResult
+
+    name = getattr(params, "name", None) or params["name"]
+    arguments = getattr(params, "arguments", None) or params.get("arguments")
+    content = await call_tool(name, arguments, partition_key="default")
+    return CallToolResult(content=list(content))
+
+
+async def _on_list_resources(ctx, params=None):
+    from mcp.types import ListResourcesResult
+
+    resources = await list_resources(partition_key="default")
+    return ListResourcesResult(resources=list(resources))
+
+
+async def _on_read_resource(ctx, params):
+    from mcp.types import ReadResourceResult, TextResourceContents
+
+    uri = getattr(params, "uri", None) or params["uri"]
+    result = await read_resource(uri, partition_key="default")
+    contents = _serialize_resource_result(result, str(uri))
+    return ReadResourceResult(
+        contents=[
+            TextResourceContents(
+                uri=c.get("uri", str(uri)),
+                mimeType=c.get("mimeType", "text/plain"),
+                text=c.get("text", ""),
+            )
+            for c in contents
+        ]
+    )
+
+
+async def _on_list_prompts(ctx, params=None):
+    from mcp.types import ListPromptsResult
+
+    prompts = await list_prompts(partition_key="default")
+    return ListPromptsResult(prompts=list(prompts))
+
+
+async def _on_get_prompt(ctx, params):
+    name = getattr(params, "name", None) or params["name"]
+    arguments = getattr(params, "arguments", None) or params.get("arguments")
+    return await get_prompt(name, arguments, partition_key="default")
+
+
+def _make_server() -> Server:
+    """Instantiate the SDK Server with v2 on_* handler wiring.
+
+    Falls back to a bare ``Server(name=...)`` if the SDK rejects the on_*
+    kwargs (older or renamed API). HTTP dispatch via
+    ``process_mcp_message()`` remains functional in the fallback path;
+    only stdio-mode dispatch through ``server.run(...)`` is degraded.
+    """
+    on_handlers = dict(
+        on_list_tools=_on_list_tools,
+        on_call_tool=_on_call_tool,
+        on_list_resources=_on_list_resources,
+        on_read_resource=_on_read_resource,
+        on_list_prompts=_on_list_prompts,
+        on_get_prompt=_on_get_prompt,
+    )
+    try:
+        return Server("MCP SSE Server", **on_handlers)
+    except TypeError as exc:
+        _log.warning(
+            "MCP SDK Server rejected on_* handler kwargs (%s). "
+            "Instantiating without stdio handlers — HTTP dispatch still works, "
+            "stdio-mode dispatch will not return tools/resources/prompts.",
+            exc,
+        )
+        return Server("MCP SSE Server")
+
+
+# === MCP SDK Initialization ===
+# Instantiated AFTER handlers/adapters so on_* kwargs can reference them.
+server = _make_server()
 
 
 # === MCP Message Handling ===
@@ -307,7 +411,9 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {"contents": _serialize_resource_result(content, params["uri"])},
+                "result": {
+                    "contents": _serialize_resource_result(content, params["uri"])
+                },
             }
 
         # Handle MCP protocol messages
