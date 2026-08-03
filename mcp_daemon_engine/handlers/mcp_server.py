@@ -81,8 +81,11 @@ async def list_tools(partition_key: str = "default") -> List[Tool]:
         tools = config.get("tools", [])
 
         if isinstance(tools, list):
+            # model_validate accepts both field names and pydantic aliases,
+            # so the existing camelCase config keys (inputSchema, mimeType)
+            # continue to work with SDK v2 whose Python attrs are snake_case.
             return [
-                Tool(**tool)
+                Tool.model_validate(tool)
                 for tool in tools
                 if isinstance(tool, dict) and "inputSchema" in tool
             ]
@@ -130,7 +133,7 @@ async def list_resources(partition_key: str = "default") -> List[Resource]:
     config = get_mcp_configuration_with_retry(partition_key)
     resources = config.get("resources", []) if isinstance(config, dict) else []
     return [
-        Resource(**resource)
+        Resource.model_validate(resource)
         for resource in resources
         if isinstance(resource, dict) and resource.get("uri") and resource.get("name")
     ]
@@ -166,7 +169,7 @@ async def list_prompts(partition_key: str = "default") -> List[Prompt]:
                     name=prompt["name"],
                     description=prompt.get("description", ""),
                     arguments=[
-                        PromptArgument(**argument)
+                        PromptArgument.model_validate(argument)
                         for argument in prompt.get("arguments", [])
                         if isinstance(argument, dict)
                     ],
@@ -233,10 +236,12 @@ async def _on_read_resource(ctx, params):
     contents = _serialize_resource_result(result, str(uri))
     return ReadResourceResult(
         contents=[
-            TextResourceContents(
-                uri=c.get("uri", str(uri)),
-                mimeType=c.get("mimeType", "text/plain"),
-                text=c.get("text", ""),
+            TextResourceContents.model_validate(
+                {
+                    "uri": c.get("uri", str(uri)),
+                    "mimeType": c.get("mimeType", "text/plain"),
+                    "text": c.get("text", ""),
+                }
             )
             for c in contents
         ]
@@ -327,7 +332,9 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                         {
                             "name": tool.name,
                             "description": tool.description,
-                            "inputSchema": tool.inputSchema,
+                            # v2 SDK renamed the Python attr to snake_case
+                            # (wire key stays inputSchema via pydantic alias)
+                            "inputSchema": tool.input_schema,
                         }
                         for tool in tools
                     ]
@@ -355,8 +362,13 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                         content_dict["text"] = item.text
                     if hasattr(item, "data"):
                         content_dict["data"] = item.data
-                    if hasattr(item, "mimeType"):
-                        content_dict["mimeType"] = item.mimeType
+                    # v2 SDK exposes the attribute as `mime_type`; older
+                    # v1 SDK exposed it as `mimeType`. Wire key stays camel.
+                    _mime = getattr(item, "mime_type", None) or getattr(
+                        item, "mimeType", None
+                    )
+                    if _mime is not None:
+                        content_dict["mimeType"] = _mime
                     if hasattr(item, "name"):
                         content_dict["name"] = item.name
                     if hasattr(item, "uri"):
@@ -392,7 +404,9 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                             "uri": str(resource.uri),
                             "name": resource.name,
                             "description": resource.description,
-                            "mimeType": resource.mimeType,
+                            # v2 SDK renamed the Python attr to snake_case
+                            # (wire key stays mimeType via pydantic alias)
+                            "mimeType": resource.mime_type,
                         }
                         for resource in resources
                     ]
