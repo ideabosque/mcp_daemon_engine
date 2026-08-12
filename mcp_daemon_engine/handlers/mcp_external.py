@@ -77,27 +77,31 @@ def _build_manifest(
     def _pfx(raw_name: str) -> str:
         return f"{name_prefix}{raw_name}" if name_prefix else raw_name
 
-    tools = [
-        {
-            "name": _pfx(tool.name),
-            "description": tool.description,
-            "inputSchema": tool.input_schema,
-            "external_name": tool.name,
-            "is_async": False,
-        }
-        for tool in inventory["tools"]
-    ]
+    tools = []
+    for tool in inventory["tools"]:
+        tool_data = tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+        tools.append(
+            {
+                "name": _pfx(tool.name),
+                "description": tool.description,
+                "inputSchema": tool_data["inputSchema"],
+                "external_name": tool.name,
+                "is_async": False,
+            }
+        )
 
-    resources = [
-        {
-            "name": _pfx(res.name),
-            "description": res.description,
-            "uri": res.uri,
-            "mimeType": res.mime_type,
-            "external_name": res.name,
-        }
-        for res in inventory["resources"]
-    ]
+    resources = []
+    for res in inventory["resources"]:
+        resource_data = res.model_dump(mode="json", by_alias=True, exclude_none=True)
+        resources.append(
+            {
+                "name": _pfx(res.name),
+                "description": res.description,
+                "uri": res.uri,
+                "mimeType": resource_data.get("mimeType"),
+                "external_name": res.name,
+            }
+        )
 
     prompts = [
         {
