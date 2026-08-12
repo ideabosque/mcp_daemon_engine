@@ -69,6 +69,16 @@ def _serialize_resource_result(result: Any, uri: str) -> List[Dict[str, Any]]:
     return [{"uri": uri, "mimeType": "text/plain", "text": str(result), "_meta": {}}]
 
 
+def _serialize_sdk_model(model: Any) -> Dict[str, Any]:
+    """Serialize an MCP/Pydantic model using its protocol field aliases.
+
+    MCP SDK releases have used both camelCase and snake_case Python attribute
+    names.  The JSON-RPC wire names remain camelCase, so relying on Pydantic's
+    aliases avoids coupling HTTP dispatch to either SDK representation.
+    """
+    return model.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
 # === Plain handlers — called directly by process_mcp_message (HTTP mode) ===
 # The v2 adapters at the bottom of the file wrap these for stdio-mode dispatch.
 
@@ -328,16 +338,7 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "tools": [
-                        {
-                            "name": tool.name,
-                            "description": tool.description,
-                            # v2 SDK renamed the Python attr to snake_case
-                            # (wire key stays inputSchema via pydantic alias)
-                            "inputSchema": tool.input_schema,
-                        }
-                        for tool in tools
-                    ]
+                    "tools": [_serialize_sdk_model(tool) for tool in tools]
                 },
             }
 
@@ -351,7 +352,7 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                 if hasattr(item, "model_dump"):
                     # Use Pydantic model serialization if available with JSON mode for proper URL serialization
                     serialized_content.append(
-                        item.model_dump(mode="json", exclude_none=True)
+                        _serialize_sdk_model(item)
                     )
                 else:
                     # Manual serialization for TextContent, ImageContent, etc.
@@ -376,7 +377,7 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                     if hasattr(item, "resource"):
                         if hasattr(item.resource, "model_dump"):
                             content_dict["resource"] = item.resource.model_dump(
-                                mode="json", exclude_none=True
+                                mode="json", by_alias=True, exclude_none=True
                             )
                         else:
                             content_dict["resource"] = item.resource
@@ -400,15 +401,7 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                 "id": msg_id,
                 "result": {
                     "resources": [
-                        {
-                            "uri": str(resource.uri),
-                            "name": resource.name,
-                            "description": resource.description,
-                            # v2 SDK renamed the Python attr to snake_case
-                            # (wire key stays mimeType via pydantic alias)
-                            "mimeType": resource.mime_type,
-                        }
-                        for resource in resources
+                        _serialize_sdk_model(resource) for resource in resources
                     ]
                 },
             }
@@ -467,7 +460,7 @@ async def process_mcp_message(partition_key: str, message: Dict) -> Dict:
                 # Serialize the content object properly
                 if hasattr(msg.content, "model_dump"):
                     content_dict = msg.content.model_dump(
-                        mode="json", exclude_none=True
+                        mode="json", by_alias=True, exclude_none=True
                     )
                 else:
                     content_dict = {
