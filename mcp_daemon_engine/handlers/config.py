@@ -295,7 +295,7 @@ class Config:
         cls.jwt_secret_key = setting.get("jwt_secret_key", "CHANGEME")
         cls.jwt_algorithm = setting.get("jwt_algorithm", "HS256")
         cls.access_token_exp = int(setting.get("access_token_exp", 15))
-        cls.local_user_file = setting.get("local_user_file", "users.json")
+        cls.local_user_file = setting.get("local_user_file") or "users.json"
         cls.admin_username = setting.get("admin_username", "admin")
         cls.admin_password = setting.get("admin_password", "admin123")
         cls.admin_static_token = setting.get("admin_static_token", None)
