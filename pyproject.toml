@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "mcp-daemon-engine"
 version = "0.0.1"
@@ -27,6 +31,14 @@ postgresql = [
   "psycopg2-binary>=2.9",
   "alembic>=1.10",
 ]
+
+[tool.setuptools.packages.find]
+# The repo root also has a top-level `migration/` (Alembic) directory, which
+# setuptools' flat-layout auto-discovery can't disambiguate from the real
+# package without this. Without it, `pip install git+https://...` (a fresh
+# clone, no pre-built wheel) fails: "Multiple top-level packages discovered
+# in a flat-layout: ['migration', 'mcp_daemon_engine']".
+include = ["mcp_daemon_engine*"]
 
 [tool.pytest.ini_options]
 # Only collect this package's own tests. tests/tmp/ holds extracted package
