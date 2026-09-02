@@ -1,13 +1,13 @@
 ﻿# Git Module Installation Development Plan
 
-> Status: Proposed
-> Document version: 1.0
+> Status: Phases 1–3 implemented and live-verified (install, refresh, version check, runtime execution against `git@github.com:ideabosque/mcp_hospirfq_processor.git`). Phase 4 (S3 removal) pending.
+> Document version: 1.1
 > Last updated: 2026-09-02
 > Owner: mcp-daemon-engine
 
 ## 1. Goal
 
-Change MCP Python module deployment from ZIP upload plus runtime `sys.path` extraction to Git-based installation while keeping S3 as a legacy deployment path until migration is complete.
+Replace MCP Python module deployment (ZIP upload plus runtime `sys.path` extraction) with Git-based installation. **The S3 package deployment option is eliminated entirely** — there is no compatibility flag, no legacy `source="s3"` runtime branch, and no ZIP upload API. Git is the only mechanism for deploying MCP module packages.
 
 The target workflow is:
 
@@ -16,60 +16,58 @@ The target workflow is:
 3. The daemon records the locally installed version state: requested ref, resolved commit, optional package version, install target, and install timestamp.
 4. The daemon reads the package manifest from `mcp_configuration.json` or `module.MCP_CONFIGURATION`.
 5. The daemon persists tools, resources, prompts, module links, modules, and settings through the existing model loader.
-6. Runtime execution imports the installed package through a deterministic import path, without S3 ZIP download or ad hoc ZIP extraction.
+6. Runtime execution imports the installed package through a deterministic import path — no ZIP download, no ad hoc ZIP extraction.
 7. A refresh check compares the local version state with Git and reinstalls only when the configured upstream version has changed or the local install is missing/corrupt.
 
 The existing external MCP proxy flow stays separate and continues to use `source="external"`.
 
-Target source model:
+Source model:
 
 | Source | Status | Meaning |
 | ------ | ------ | ------- |
 | `git` | Primary | Python MCP modules installed from Git into local artifact storage. |
 | `external` | Keep | Remote MCP servers proxied over HTTP. |
 | `local` / empty | Keep | Built-in or environment-installed development modules. |
-| `s3` | Legacy, enabled by default | ZIP package deployment kept behind `ENABLE_S3_PACKAGE_UPLOAD=true` until retirement. |
+| `s3` | **Removed** | ZIP package deployment is eliminated. Existing `source="s3"` rows must be migrated to `source="git"` before the removal release (see §12). |
 
-## 2. Current State and S3 Compatibility Scope
+> Note: S3 the **service** is not removed from the daemon — `mcp_function_call` large-content offload (and any other non-package S3 usage) still uses `Config.aws_s3` / `Config.funct_bucket_name`. What is removed is the S3 *package deployment* surface: upload APIs, ZIP download/extract, and the `source="s3"` runtime branch.
 
-The current package flow is implemented and documented in `docs/MCP_PACKAGE_UPLOAD_SPEC.md`.
+## 2. Current State and S3 Removal Scope
 
-| Area | Current behavior |
+The legacy package flow (documented in `docs/MCP_PACKAGE_UPLOAD_SPEC.md`) is being removed. Every S3 package surface is deleted, not gated:
+
+| Area | Legacy behavior | Action |
+| ---- | --------------- | ------ |
+| Upload API | `generateMcpPackageUploadUrl` creates a presigned S3 PUT URL for `{packageName}.zip`. | **Remove** the mutation from `schema.py`, `mutations/mcp_upload.py`, and `deploy()`. |
+| Process API | `processMcpPackage` downloads the ZIP from S3, validates, extracts, persists, warms cache. | **Remove** the mutation and the `process_mcp_package()` handler. |
+| Base64 shortcut | `loadMcpConfiguration(packageBase64: ...)` decodes a ZIP, uploads to S3, processes. | **Remove** the `packageBase64` argument and `process_base64_package()`. |
+| Runtime package source | `source="s3"` triggers ZIP download/extract. | **Remove** the `s3` branch from `_get_module()`; raise a clear migration-required error if a row still carries `source="s3"`. |
+| Runtime import path | `_download_and_extract_package()` / `_import_s3_module()` / `_import_module_from_extract_path()`. | **Remove** from `mcp_utility.py` and `mcp_handlers.py`. |
+| Feature flag | `ENABLE_S3_PACKAGE_UPLOAD` gated the upload APIs. | **Remove** the flag from `Config`, `settings.yaml`, and all env examples — there is nothing left to gate. |
+| `FUNCT_BUCKET_NAME` for modules | Required for package staging. | **No longer required for module deployment.** Retained only for `mcp_function_call` content offload. |
+
+What is kept and reused:
+
+| Area | Behavior |
 | ---- | ---------------- |
-| Upload API | `generateMcpPackageUploadUrl` creates a presigned S3 PUT URL for `{packageName}.zip`. |
-| Process API | `processMcpPackage` downloads the uploaded ZIP from S3, validates it, extracts it, persists the manifest, and warms cache. |
-| Base64 shortcut | `loadMcpConfiguration(packageBase64: ...)` decodes a ZIP, uploads it to S3, then uses the same process path. |
-| Runtime package source | `MCPModule.source` controls dispatch. `source="s3"` triggers ZIP download/extract. `source=""` imports directly from daemon `sys.path`. `source="external"` uses the built-in external proxy adapter. |
-| Runtime import path | `_download_and_extract_package()` downloads `{packageName}.zip` from S3 into `Config.funct_zip_path` and extracts it to `Config.funct_extract_path`. `_get_module()` inserts `Config.funct_extract_path` into `sys.path` and imports `module_name`. |
-| Manifest loading | Upload processing prefers archive-root `mcp_configuration.json` and falls back to importing `module.MCP_CONFIGURATION`. |
-| Persistence | `load_mcp_configuration_into_models()` already accepts an explicit manifest dict and can persist it without importing the module. |
-
-S3 remains supported during the Git migration. Add an explicit feature flag so retirement can be controlled without changing the Git implementation:
-
-| Surface | Compatibility action |
-| ------- | ----------------- |
-| `ENABLE_S3_PACKAGE_UPLOAD` | New flag, configured default `true` for now, effective only when S3 is configured. Controls S3 upload/package processing API availability. |
-| `generateMcpPackageUploadUrl` | Keep registered while `ENABLE_S3_PACKAGE_UPLOAD=true`; return `ok=false` when disabled. |
-| `processMcpPackage` | Keep registered while `ENABLE_S3_PACKAGE_UPLOAD=true`; return `ok=false` when disabled. |
-| `loadMcpConfiguration(packageBase64: ...)` | Keep while the flag is true; reject Base64 ZIP loading when disabled. |
-| `_download_and_extract_package()` | Keep for legacy `source="s3"` runtime rows until all rows are migrated. |
-| `source="s3"` | Keep supported during migration. Later retirement should raise a clear migration-required error. |
-| `FUNCT_BUCKET_NAME` for modules | Still required only when S3 upload/runtime support is enabled or active rows use `source="s3"`. If missing, the effective S3 upload flag must be false. |
+| Manifest loading | Package manifests prefer `mcp_configuration.json` and fall back to importing `module.MCP_CONFIGURATION` (implemented in the Git installer). |
+| Persistence | `load_mcp_configuration_into_models()` accepts an explicit manifest dict and persists it without importing the module — the Git installer's persistence sink. |
+| Manifest validation | `validate_manifest()` is reused by the Git installer before persistence. |
 
 ## 3. Constraints and Existing Extension Points
 
 - `MCPModule` currently stores only `module_name`, `package_name`, `classes`, `source`, and audit timestamps in both DynamoDB and PostgreSQL.
 - `MCPSetting.setting` is flexible JSON and can store installation metadata without a table migration.
 - `MCPFunction.data` is flexible JSON and already stores extra metadata such as `external_name`.
-- The dispatcher already has a source switch in `_get_module()`. This should become a provider switch for `external`, `git`, `s3`, and local direct imports. `s3` remains legacy and should be rejected only after the final retirement phase.
-- `load_mcp_configuration_into_models()` is the right persistence sink and should be reused.
+- The dispatcher has a source switch in `_get_module()`. This is a provider switch for `external`, `git`, and local direct imports only — no `s3` branch after the removal phase.
+- `load_mcp_configuration_into_models()` is the right persistence sink and is reused.
 - The codebase has no committed test suite convention beyond `pyproject.toml` pytest settings and `ruff`; add focused tests if introducing a test runner is acceptable.
 
 ## 4. Proposed Design
 
 Add a Git package source with `MCPModule.source == "git"`.
 
-Git install metadata should be stored in the module setting row initially:
+Git install metadata is stored in the module setting row:
 
 ```json
 {
@@ -79,6 +77,7 @@ Git install metadata should be stored in the module setting row initially:
   "install_target": "/tmp/packages/<packageName>/<resolvedCommit>",
   "install_mode": "pip",
   "version_strategy": "ref",
+  "distribution_name": "",
   "installed_package_version": "1.2.3",
   "latest_remote_version": "1.2.4",
   "resolved_commit": "<commit-sha>",
@@ -88,34 +87,40 @@ Git install metadata should be stored in the module setting row initially:
 }
 ```
 
-This avoids a schema migration for the first implementation. If the system later needs list/filter queries by repository URL, ref, or commit, add explicit columns to `MCPModule` or a separate module deployment table.
+This avoids a schema migration. If the system later needs list/filter queries by repository URL, ref, or commit, add explicit columns to `MCPModule` or a separate module deployment table.
 
-The preferred installer should be `pip install --target <install_target> git+<url>@<ref>` because it honors normal Python packaging metadata and dependencies. For repositories that contain the package in a subdirectory, support the pip direct URL fragment:
+The installer is `pip install --target <install_target> --no-deps git+<url>@<ref>` because it honors normal Python packaging metadata while keeping the module isolated from the daemon environment. `--no-deps` is deliberate: module packages declare private SilvaEngine libraries (e.g. `silvaengine-utility`) that exist in the daemon environment but not on PyPI, so dependency resolution would fail. Missing dependencies are handled explicitly (see below). For repositories that contain the package in a subdirectory, support the pip direct URL fragment:
 
 ```text
 git+https://github.com/org/repo.git@ref#subdirectory=path/to/package
 ```
 
-The daemon should not clone arbitrary code into the current working tree, and it should not install packages into the daemon's own environment by default.
+The daemon does not clone arbitrary code into the current working tree, and it does not install packages into the daemon's own environment.
 
-Keep S3 and Git package artifacts in separate roots:
+Git package artifacts live under a single root:
 
 ```text
-S3 legacy extraction: Config.funct_extract_path, default /tmp/functs
-Git installations:   Config.git_install_path, default /tmp/packages
+Git installations: Config.git_install_path, default /tmp/packages
 ```
 
-Git install targets should be commit-scoped:
+Git install targets are commit-scoped:
 
 ```text
 {Config.git_install_path}/{packageName}/{resolvedCommit}/
 ```
 
-This preserves the current S3 extraction behavior while giving Git packages a separate lifecycle, dependency tree, and cleanup boundary.
+This gives Git packages a dedicated lifecycle, dependency tree, and cleanup boundary, fully separate from any other artifact storage the daemon uses.
+
+### Dependency policy
+
+Module packages must depend only on packages already available in the daemon environment or on installable third-party packages. After the module install, the handler scans `*.dist-info/METADATA` `Requires-Dist` entries of everything freshly installed under the target:
+
+1. Requirements already satisfied by the daemon environment (checked via `importlib.metadata`, PEP 503 name normalization, extras and environment markers stripped) are **skipped** — they are not installed again.
+2. Missing requirements are installed **into the install target** (`pip install --target <install_target> <reqs>`), so the module's dependency tree is self-contained and importable at runtime.
 
 ## 5. Version and Refresh Model
 
-The Git provider needs two separate concepts:
+The Git provider needs separate concepts:
 
 | Concept | Meaning |
 | ------- | ------- |
@@ -123,19 +128,20 @@ The Git provider needs two separate concepts:
 | Installed version | What is currently installed locally, represented by `resolved_commit`, optional package metadata version, and `installed_at`. |
 | Remote version | What Git currently resolves for the requested version, represented by `remote_commit` and optional latest tag/package version. |
 
-Recommended first implementation: use commit SHA comparison as the authoritative refresh decision.
+Commit SHA comparison is the authoritative refresh decision.
 
 Decision rules:
 
 1. If `install_target` is missing, reinstall.
-2. If `resolved_commit` is missing, reinstall and persist the resolved commit.
-3. If `git_ref` is an immutable commit SHA and it equals `resolved_commit`, do not reinstall.
-4. If `git_ref` is a branch or tag, run `git ls-remote <url> <ref>` and compare the returned commit with `resolved_commit`.
-5. If the remote commit differs from `resolved_commit`, reinstall into a new target directory, validate the manifest, persist metadata, purge import cache, and warm MCP configuration cache.
-6. If the remote commit is unchanged, return a no-op result and update only `last_checked_at` / `last_checked_commit`.
-7. If Git cannot be reached, keep the current local installation and report the check failure. Do not delete a working local install before a replacement has been successfully installed and validated.
+2. If `install_target` exists but differs from the currently expected target (e.g. `GIT_INSTALL_PATH` configuration changed), reinstall into the expected target and clean up the old one.
+3. If `resolved_commit` is missing, reinstall and persist the resolved commit.
+4. If `git_ref` is an immutable commit SHA and it equals `resolved_commit`, do not reinstall.
+5. If `git_ref` is a branch or tag, run `git ls-remote <url> <ref>` and compare the returned commit with `resolved_commit`.
+6. If the remote commit differs from `resolved_commit`, reinstall into a new target directory, validate the manifest, persist metadata, purge import cache, and warm MCP configuration cache.
+7. If the remote commit is unchanged, return a no-op result and update only `last_checked_at` / `last_checked_commit`.
+8. If Git cannot be reached, keep the current local installation and report the check failure. Do not delete a working local install before a replacement has been successfully installed and validated.
 
-The install target should be derived from the resolved commit, not the moving ref:
+The install target is derived from the resolved commit, not the moving ref:
 
 ```text
 {git_install_path}/{packageName}/{resolvedCommit}/
@@ -143,50 +149,36 @@ The install target should be derived from the resolved commit, not the moving re
 
 That allows two versions to coexist during refresh. Once the new version is installed, validated, and persisted, older commit directories for the same package can be removed if no active module setting references them.
 
-Semantic version support should be layered on top of commit comparison:
+Semantic version support layered on top of commit comparison:
 
 - `version_strategy="ref"`: track the explicitly supplied `gitRef`. This is the default and safest behavior.
 - `version_strategy="latest_tag"`: discover the latest allowed tag from Git, resolve that tag to a commit, then compare with `resolved_commit`.
 - `version_strategy="package_version"`: after install, read the installed package version from `importlib.metadata.version(distribution_name)` when a distribution name is supplied.
 
-For the first release, implement `ref` and optionally `latest_tag`. Defer package-version comparison unless the package/distribution naming convention is clear, because Python import module names and package distribution names can differ.
+`ref` and `latest_tag` are implemented; `package_version` is read for information when `distributionName` is supplied but is not used as a refresh trigger, because Python import module names and package distribution names can differ.
 
-## 6. New Configuration
+## 6. Configuration
 
-Add settings/environment variables for installation control:
+Settings/environment variables for installation control:
 
 | Setting | Default | Purpose |
 | ------- | ------- | ------- |
-| `git_install_path` / `GIT_INSTALL_PATH` | `/tmp/packages` | Parent directory for installed Git packages. |
-| `git_clone_path` / `GIT_CLONE_PATH` | `/tmp/mcp_git_repos` | Optional clone/cache directory if clone-based validation is needed. |
+| `git_install_path` / `GIT_INSTALL_PATH` | `/tmp/packages` | Parent directory for installed Git packages. In Docker, point at the bind-mounted data volume (e.g. `/app/data/packages`) so installs survive container restarts. Also hosts the temporary SSH key file when `GIT_SSH_KEY` is set. |
 | `git_install_timeout` / `GIT_INSTALL_TIMEOUT` | `300` | Max seconds for one install operation. |
 | `git_allowed_hosts` / `GIT_ALLOWED_HOSTS` | `github.com` | Comma-separated allowlist for Git hosts. |
-| `git_token` / `GIT_TOKEN` | unset | Optional token for private repositories. Do not persist it in module settings. |
+| `git_token` / `GIT_TOKEN` | unset | Optional token for private HTTPS repositories. Injected into `git ls-remote` and the pip direct URL as `x-access-token`. Never logged, never persisted. Ignored for SSH URLs. |
+| `git_ssh_key` / `GIT_SSH_KEY` | unset | Optional private SSH key material for `git+ssh` URLs (single-line PEM with `\n` escapes). Written to a `0600` file under `git_install_path` and passed to git via `GIT_SSH_COMMAND`. Leave unset to use the system SSH setup (`~/.ssh`, ssh-agent, or a baked-in deploy key). Ignored for HTTPS URLs. |
 | `git_require_ref` / `GIT_REQUIRE_REF` | `true` | Require branch, tag, or commit instead of accepting moving default branch. |
 | `git_refresh_policy` / `GIT_REFRESH_POLICY` | `manual` | `manual`, `on_startup`, or `on_runtime_miss`. |
 | `git_refresh_ttl` / `GIT_REFRESH_TTL` | `3600` | Minimum seconds between remote version checks for the same module. |
 | `git_version_strategy` / `GIT_VERSION_STRATEGY` | `ref` | Default version discovery strategy for Git modules. |
 | `git_tag_pattern` / `GIT_TAG_PATTERN` | unset | Optional regex for tags when `version_strategy="latest_tag"`. |
-| `enable_s3_package_upload` / `ENABLE_S3_PACKAGE_UPLOAD` | `true` when S3 is configured, otherwise effective `false` | Keep legacy S3 upload/package processing enabled during migration. |
 
-`Config._set_parameters()` should read these values, and `Config.initialize()` should create the install/cache directories.
-
-S3 compatibility should use an effective flag rather than the raw configured value:
-
-```python
-Config.enable_s3_package_upload = bool(setting.get("enable_s3_package_upload", True))
-Config.enable_s3_package_upload = (
-    Config.enable_s3_package_upload
-    and bool(Config.funct_bucket_name)
-    and Config.aws_s3 is not None
-)
-```
-
-If S3 is not configured, `generateMcpPackageUploadUrl`, `processMcpPackage`, and the Base64 ZIP branch should return disabled/configuration errors even when `ENABLE_S3_PACKAGE_UPLOAD` was not explicitly set to `false`.
+`Config._set_parameters()` reads these values, and `Config.initialize()` creates the install directory. No S3 package-upload flag exists — there is no S3 package surface to toggle.
 
 ## 7. GraphQL API
 
-Add a new mutation rather than overloading `processMcpPackage`:
+Git installation is a new mutation; the legacy upload mutations are removed entirely (see §12).
 
 ```graphql
 type InstallMcpPackageFromGitPayload {
@@ -217,19 +209,20 @@ extend type Mutation {
 Behavior:
 
 1. Validate `packageName` and `moduleName` using the existing name policy.
-2. Validate `gitUrl` scheme and host against the allowlist.
+2. Validate `gitUrl` scheme and host against the allowlist (HTTPS and SSH forms accepted).
 3. Require `gitRef` when `git_require_ref` is enabled.
 4. Resolve the requested ref or discovered version to a commit SHA before persistence.
-5. Compare the remote commit with the locally persisted `resolved_commit` unless `forceRefresh=true`.
+5. Compare the remote commit with the locally persisted `resolved_commit` unless `forceRefresh=true`; also reinstall when the persisted `install_target` differs from the currently expected target.
 6. Return `action="noop"` if the local installation exists and the remote commit has not changed.
-7. Install the package into a deterministic target directory based on URL, resolved commit, subdirectory, and package name.
-8. Load and validate the manifest.
-9. Persist through `load_mcp_configuration_into_models(..., source="git")`.
-10. Store Git install/version metadata in the setting row by predeclaring metadata keys in the manifest's module `setting`, then passing concrete values via `variables`.
-11. Clear and warm `Config.mcp_configuration` for the active partition key.
-12. Return `action="installed"`, `action="refreshed"`, or `action="noop"`.
+7. Install the package into a deterministic commit-scoped target directory.
+8. Install missing dependencies into the target (skip what the daemon environment already satisfies).
+9. Load and validate the manifest.
+10. Persist through `load_mcp_configuration_into_models(..., source="git")`.
+11. Store Git install/version metadata in the setting row by predeclaring metadata keys in the manifest's module `setting`, then passing concrete values via `variables`.
+12. Clear and warm `Config.mcp_configuration` for the active partition key.
+13. Return `action="installed"`, `action="refreshed"`, or `action="noop"`.
 
-Add a second mutation for version checks without requiring a full install request:
+A second mutation performs version checks without a full install request:
 
 ```graphql
 type CheckMcpGitPackageVersionPayload {
@@ -251,9 +244,9 @@ extend type Mutation {
 }
 ```
 
-`checkMcpGitPackageVersion` should read the module's setting metadata from the existing cached configuration or repository row, perform a remote check when TTL allows, update `last_checked_at` metadata, and report whether refresh is needed. It should not reinstall.
+`checkMcpGitPackageVersion` reads the module's setting metadata from the cached configuration, performs a remote check when TTL allows (or `forceCheck=true`), updates `last_checked_at` metadata, and reports whether refresh is needed. It never reinstalls.
 
-Optionally add a third mutation for explicit refresh by module:
+A third mutation provides explicit refresh by module:
 
 ```graphql
 extend type Mutation {
@@ -267,53 +260,55 @@ extend type Mutation {
 
 `refreshMcpGitPackage` reuses persisted Git metadata and follows the same no-op/install decision rules as `installMcpPackageFromGit`.
 
-Register the mutation in:
+Register the mutations in:
 
 - `mcp_daemon_engine/mutations/mcp_git.py`
 - `mcp_daemon_engine/schema.py`
 - `mcp_daemon_engine/main.py` deployment metadata
 
-Keep legacy S3 mutations registered while `ENABLE_S3_PACKAGE_UPLOAD=true`:
-
-- `mcp_daemon_engine/schema.py`
-- `mcp_daemon_engine/main.py` deployment metadata
-
-When `ENABLE_S3_PACKAGE_UPLOAD=false`, the S3 mutations should remain schema-compatible but return `ok=false` with a message that S3 package upload is disabled and Git installation should be used.
+The legacy S3 mutations (`generateMcpPackageUploadUrl`, `processMcpPackage`) and the Base64 ZIP argument are **removed** from `schema.py` and `main.py` in the S3 removal phase — not flagged, not retained.
 
 ## 8. Installer Handler
 
-Create `mcp_daemon_engine/handlers/mcp_git.py`.
+Implemented in `mcp_daemon_engine/handlers/mcp_git.py`.
 
-Recommended public entry point:
+Public entry points:
 
 ```python
-def install_mcp_package_from_git(info: ResolveInfo, **kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    ...
+def install_mcp_package_from_git(info: ResolveInfo, **kwargs: Dict[str, Any]) -> Dict[str, Any]: ...
+def check_mcp_git_package_version(info: ResolveInfo, **kwargs: Dict[str, Any]) -> Dict[str, Any]: ...
+def refresh_mcp_git_package(info: ResolveInfo, **kwargs: Dict[str, Any]) -> Dict[str, Any]: ...
 ```
 
-Recommended helper responsibilities:
+Helper responsibilities (as implemented):
 
 | Helper | Responsibility |
 | ------ | -------------- |
-| `_validate_git_url()` | Enforce HTTPS/SSH policy, host allowlist, and no local file URLs. |
-| `_build_pip_direct_url()` | Convert URL/ref/subdirectory into a pip-compatible direct URL. |
-| `_install_to_target()` | Run pip with timeout into a clean target directory. |
-| `_resolve_commit()` | Resolve ref to immutable commit SHA using `git ls-remote` or post-install package metadata when available. |
-| `_get_local_install_state()` | Read persisted setting metadata and verify whether `install_target` exists. |
-| `_get_remote_version_state()` | Resolve current remote commit and optional latest tag/package version. |
-| `_needs_refresh()` | Compare local and remote state while honoring TTL and `forceRefresh`. |
+| `_validate_git_url()` | Accept HTTPS and SSH URL forms (`https://...`, `ssh://...`, `git@host:path`); enforce the host allowlist; reject `file://`, local paths, and other schemes. |
+| `_normalize_scp_url()` | Convert scp-style `git@host:path` to `ssh://git@host/path` for pip (plain git accepts both; pip requires the `ssh://` form). |
+| `_authed_git_url()` | Inject `GIT_TOKEN` into HTTPS URLs (ls-remote and pip alike); return SSH URLs unchanged. |
+| `_build_pip_direct_url()` | Convert URL/ref/subdirectory into a pip-compatible direct URL with token injection and scp normalization applied. |
+| `_git_env()` / `_git_ssh_command()` | Build the subprocess environment; write `GIT_SSH_KEY` material to a `0600` file and expose it via `GIT_SSH_COMMAND` when set, otherwise inherit the system SSH setup. |
+| `_install_to_target()` | Run `pip install --target ... --no-deps` with timeout into the commit-scoped target directory. |
+| `_install_missing_dependencies()` | Scan `Requires-Dist` of installed dist-info metadata; skip requirements the daemon environment satisfies; install the rest into the target. |
+| `_resolve_remote_commit()` | Resolve ref to immutable commit SHA via `git ls-remote` (short-circuit 40-char SHAs). |
+| `_resolve_latest_tag()` | Discover the latest tag matching `git_tag_pattern` via `git ls-remote --tags`. |
+| `_get_local_install_state()` / `_read_existing_module_setting()` | Read persisted setting metadata from the cached MCP configuration. |
+| `_needs_refresh()` | Compare local and remote state, honoring `forceRefresh`, missing targets, and install-target drift. |
+| `_check_ttl_fresh()` | Skip remote checks within `git_refresh_ttl` unless forced. |
 | `_read_distribution_version()` | Read installed distribution version via `importlib.metadata` when `distributionName` is configured. |
 | `_load_manifest_from_install()` | Prefer `mcp_configuration.json`; fall back to importing `module.MCP_CONFIGURATION` from the install target. |
+| `_inject_git_metadata_into_manifest()` | Merge Git metadata defaults + concrete values into each manifest module's `setting`. |
 | `_clear_install_target()` | Safely remove only paths under `git_install_path`. |
-| `_promote_install()` | Atomically switch from old install target to the newly validated target. |
+| `_update_check_metadata()` | Persist `last_checked_at` / `last_checked_commit` after a version check (best-effort). |
 
 Use `subprocess.run()` with argument lists, not shell strings, for `pip` and `git` calls.
 
-Refresh safety rule: install into a temporary or commit-scoped target first. Only update persisted metadata and import cache after installation and manifest validation succeed. Keep the previous target usable until the new target is ready.
+Refresh safety rule: install into a commit-scoped target first. Only update persisted metadata and import cache after installation and manifest validation succeed. Keep the previous target usable until the new target is ready, then clean it up.
 
 ## 9. Runtime Loader Changes
 
-Refactor `_get_module()` in `handlers/mcp_utility.py` into explicit provider branches:
+`_get_module()` in `handlers/mcp_utility.py` uses explicit provider branches:
 
 ```python
 source_key = (source or "local").lower()
@@ -321,39 +316,37 @@ source_key = (source or "local").lower()
 if source_key == "external":
     ...
 elif source_key == "git":
-    return _import_git_module(package_name, module_name, module_setting)
-elif source_key == "s3":
-    return _import_s3_module(package_name, module_name)
+    return _import_git_module(module_name, module_setting)
 elif source_key == "local":
     return importlib.import_module(module_name)
 else:
     raise Exception(f"Unsupported MCP module source: {source}")
 ```
 
-This should intentionally change the ambiguous legacy behavior where `source is None` means direct import but `source == ""` falls through to the extracted-package path. After the refactor, both `None` and `""` should mean `local` direct import. Legacy ZIP package rows should use explicit `source="s3"` until they are migrated to `source="git"`.
+After the S3 removal phase there is no `s3` branch: any row still carrying `source="s3"` raises a clear migration-required error instead of silently downloading a ZIP. Both `None` and `""` mean `local` direct import, replacing the ambiguous legacy behavior where `source == ""` fell through to the extracted-package path.
 
-The current runtime module dict contains `setting`, so either pass the module setting into `_get_module()` or add a small resolver that looks up the setting-derived `install_target` for Git modules.
+The runtime module dict contains `setting`; `_get_class()` passes `module_setting` through to `_get_module()` so Git modules resolve their `install_target`.
 
 For `source="git"`:
 
-1. Check whether the expected `install_target` exists.
-2. If missing and install metadata is complete, reinstall from Git.
-3. Insert `install_target` into `sys.path`.
-4. Import from the install target using the same cache-purge approach as `_import_module_from_extract_path()`.
+1. Read `install_target` from the module setting.
+2. If missing entirely, fail with "Run installMcpPackageFromGit first".
+3. If the directory is missing, fail with a clear reinstall instruction (auto-reinstall from the runtime path requires a ResolveInfo context the runtime does not have; `git_refresh_policy=on_runtime_miss` logs a warning and the error directs the admin to `refreshMcpGitPackage`).
+4. Insert `install_target` into `sys.path` and import using the same cache-purge approach as the legacy extractor.
 
-Runtime should not check Git on every tool call by default. Use this policy:
+Runtime does not check Git on every tool call. Policy:
 
-- `git_refresh_policy="manual"`: runtime imports the persisted local installation and only reinstalls when the target is missing.
-- `git_refresh_policy="on_runtime_miss"`: runtime reinstalls only when the target is missing or import fails due to missing module files.
+- `git_refresh_policy="manual"` (default): runtime imports the persisted local installation and only errors when the target is missing.
+- `git_refresh_policy="on_runtime_miss"`: logs a warning on missing targets (auto-reinstall from runtime is deferred; see Open Decisions).
 - `git_refresh_policy="on_startup"`: a startup hook checks all Git modules subject to `git_refresh_ttl`; changed modules are refreshed before serving traffic when feasible.
 
 Avoid `on_every_call`; remote checks add latency, create Git rate-limit risk, and make tool execution depend on network availability.
 
-Do not install Git packages into `Config.funct_extract_path`. Keep S3 extraction under `/tmp/functs` and Git installations under `/tmp/packages` so the two deployment mechanisms do not share dependency files or import roots.
+Git packages are never installed into any other module artifact directory — `/tmp/packages` (or the configured `git_install_path`) is the only Git import root.
 
 ## 10. Manifest Contract
 
-Git packages should support the same manifest shape as uploaded ZIP packages:
+Git packages support the same manifest shape the ZIP flow used:
 
 ```text
 repo/
@@ -363,7 +356,7 @@ repo/
     |-- __init__.py
 ```
 
-The manifest should declare module settings keys that may be overridden by deployment variables. To store Git metadata through the existing loader, the handler can inject metadata defaults into each module before validation/persistence:
+The manifest declares module settings keys that may be overridden by deployment variables. To store Git metadata through the existing loader, the handler injects metadata defaults into each module before validation/persistence:
 
 ```python
 module["setting"] = {
@@ -384,163 +377,146 @@ module["setting"] = {
 }
 ```
 
-Then pass actual values through `variables` so the loader's existing override logic fills them.
+Then the actual values are merged in before persistence, so the loader's existing override logic fills them.
 
 ## 11. Security Requirements
 
-- Default to HTTPS Git URLs. SSH support should be explicit because it depends on host machine keys.
-- Require a ref by default. Moving branches such as `main` should be allowed only when explicitly configured.
+- HTTPS is the default Git URL scheme. SSH is explicitly supported via the system SSH setup (`~/.ssh`, ssh-agent, baked-in deploy keys) or `GIT_SSH_KEY`; both schemes pass through the host allowlist.
+- Require a ref by default. Moving branches such as `main` should be allowed only when explicitly configured (`GIT_REQUIRE_REF=false`).
 - Resolve and persist the commit SHA used for installation.
 - For branch or latest-tag tracking, compare remote and local commits before refresh; do not trust a semantic version string alone.
-- Never log tokens or embed `GIT_TOKEN` in persisted settings.
-- Restrict install and clone paths to configured parent directories before deleting or replacing them.
+- Never log tokens or SSH keys; never embed `GIT_TOKEN` or `GIT_SSH_KEY` in persisted settings.
+- Restrict install paths to the configured parent directory before deleting or replacing them.
 - Reject local paths, `file://` URLs, and unsupported hosts.
-- Prefer `pip --target` over global environment installs.
+- Prefer `pip --target` over global environment installs; module installs use `--no-deps` with an explicit missing-dependency step.
 - Consider adding a future `git_allowed_repositories` allowlist for production.
 
-## 12. S3 Compatibility, Retirement, and Migration
+## 12. S3 Removal
 
-S3 remains enabled by default in the first Git release:
+S3 package deployment is eliminated outright. The removal checklist:
 
-```text
-ENABLE_S3_PACKAGE_UPLOAD=true
-```
-
-Required migration before hard removal:
-
-1. Inventory all active `MCPModule` rows where `source="s3"` or where `source` is truthy and not `git`/`external`.
+1. Inventory all active `MCPModule` rows where `source="s3"` or `source` is truthy and not `git`/`external`.
 2. Build an operator-provided mapping from each legacy `packageName`/`moduleName` to `gitUrl`, `gitRef`, optional `gitSubdirectory`, optional `distributionName`, and version strategy.
-3. For each row, run `installMcpPackageFromGit` or a batch migration helper.
-4. Verify the persisted module row is now `source="git"` and contains `resolved_commit` plus `install_target`.
-5. Execute at least one tool/resource/prompt per migrated module.
-6. Set `ENABLE_S3_PACKAGE_UPLOAD=false` after no clients need the upload flow.
-7. Keep runtime `source="s3"` support until no active module rows use it.
-8. In the final retirement release, remove the S3 runtime branch or change it to raise a clear retirement error.
-9. Stop requiring `FUNCT_BUCKET_NAME` for module deployment.
+3. For each row, run `installMcpPackageFromGit` (the `deploy_mcp_git.py` gateway script automates this).
+4. Verify each persisted module row is `source="git"` with `resolved_commit` and `install_target`, and execute at least one tool/resource/prompt per migrated module.
+5. Remove the `generateMcpPackageUploadUrl` and `processMcpPackage` mutations from `schema.py`, delete `mutations/mcp_upload.py`, and remove the actions from `deploy()` in `main.py`.
+6. Remove the `packageBase64` argument and `process_base64_package()` from `loadMcpConfiguration` / `mcp_handlers.py`.
+7. Remove the `s3` branch and `_import_s3_module()` / `_download_and_extract_package()` / `_import_module_from_extract_path()` from `mcp_utility.py`; the `s3` source becomes an unsupported-source error.
+8. Remove `enable_s3_package_upload` from `Config`, the gateway `settings.yaml`, and all env example files.
+9. Keep `Config.aws_s3` and `FUNCT_BUCKET_NAME` initialization — `mcp_function_call` content offload still requires them — but they are no longer part of module deployment.
+10. Mark `docs/MCP_PACKAGE_UPLOAD_SPEC.md` as retired.
 
-Do not reinterpret old `source="s3"` rows as Git rows. The runtime behavior should remain explicit and source-specific.
-
-Hard retirement is acceptable only if there are no production rows that still require `source="s3"` or if every affected module has a known Git repository/ref and can be migrated in the same release.
+Hard removal is acceptable only when no production rows still require `source="s3"`, or every affected module has a known Git repository/ref and is migrated in the same release. Do not reinterpret old `source="s3"` rows as Git rows — migration is explicit, per module, via the install mutation.
 
 ## 13. Implementation Phases
 
-### Phase 1: Foundations
+### Phase 1: Foundations — Complete
 
-- Add Git install settings to `Config`.
-- Add `mcp_git.py` handler with URL validation, direct URL construction, and install target path generation.
-- Add local/remote version state structs and commit comparison helpers.
-- Add manifest loading from an installed target.
-- Add unit-level tests for URL validation and target path safety if a test framework is accepted.
+- Git install settings in `Config` (including `git_ssh_key`; `git_clone_path` was dropped during implementation as unused — the SSH key file lives under `git_install_path`).
+- `mcp_git.py` handler: URL validation (HTTPS + SSH), scp normalization, token injection, commit-scoped target generation, `--no-deps` install, dependency scan/install, manifest loading with import fallback.
+- Local/remote version state, commit comparison, TTL handling.
+- Unit-level tests for URL validation and target path safety still to add.
 
-### Phase 2: Install Mutation
+### Phase 2: Install Mutations — Complete
 
-- Add `InstallMcpPackageFromGit` mutation.
-- Add `CheckMcpGitPackageVersion` mutation.
-- Add `RefreshMcpGitPackage` mutation if explicit refresh should be one call.
-- Register it in `schema.py` and `main.py`.
-- Reuse `validate_manifest()` and `load_mcp_configuration_into_models()`.
-- Clear and warm the partition cache after successful persistence.
-- Return `resolvedCommit`, installed package version, and action in the payload.
+- `InstallMcpPackageFromGit`, `CheckMcpGitPackageVersion`, `RefreshMcpGitPackage` registered in `schema.py` and `main.py`.
+- Reuses `validate_manifest()` and `load_mcp_configuration_into_models()`.
+- Cache clear + warm after successful persistence.
+- Payloads return `resolvedCommit`, installed package version, and `action`.
+- Interim S3 compatibility flag was added during development; removed in Phase 4.
 
-### Phase 3: Runtime Git Source and S3 Compatibility
+### Phase 3: Runtime Git Source — Complete, live-verified
 
-- Add explicit `source="git"` branch in `_get_module()`.
-- Import from `install_target` rather than `Config.funct_extract_path`.
-- Reinstall on missing target only when install metadata is complete.
-- Honor `git_refresh_policy` and `git_refresh_ttl`; avoid remote checks on every execution.
-- Preserve `source="external"`, `source="s3"`, and local direct import behavior.
-- Normalize the S3 branch behind an explicit `_import_s3_module()` helper so later removal is straightforward.
+- Explicit `source="git"` branch in `_get_module()`; `_get_class()` passes `module_setting` through at all three call sites (tool/resource/prompt).
+- Imports from the commit-scoped `install_target`.
+- Honors `git_refresh_policy`; no remote checks on every execution.
+- `source="external"` and local direct import preserved.
+- Live-verified end-to-end: install → dependency scan → version check (TTL + forced) → no-op → runtime `tools/call` from the install target.
 
-### Phase 4: Migration and Operations
+### Phase 4: S3 Removal — Pending
 
-- Create an operator-run migration helper that maps existing packages to Git URLs and refs.
+- Execute the §12 removal checklist (mutations, Base64 flow, runtime `s3` branch, feature flag, env examples).
+- Add a migration-required error for any residual `source="s3"` row encountered at runtime.
+- Update `docs/MCP_PACKAGE_UPLOAD_SPEC.md` with retired status.
+
+### Phase 5: Operations and Docs — Pending
+
 - Add docs for package repository layout and install mutation examples.
 - Add logging/metrics around install duration, resolved commit, version checks, cache hits, no-op checks, and reinstall attempts.
-- Add rollback instructions based on keeping `ENABLE_S3_PACKAGE_UPLOAD=true` and leaving `source="s3"` rows unchanged until their Git install is verified.
-
-### Phase 5: S3 Cleanup
-
-- Update `docs/MCP_PACKAGE_UPLOAD_SPEC.md` with retired status.
-- Change the default for `ENABLE_S3_PACKAGE_UPLOAD` to `false`, then remove it in a later release.
-- Remove upload actions from `deploy()`.
-- Remove GraphQL schema registration for upload mutations.
-- Remove Base64 ZIP handling from `loadMcpConfiguration`.
-- Remove unused S3 package helpers from `mcp_handlers.py` and `mcp_utility.py`.
-- Keep S3 client initialization only if another feature still needs it.
+- Add rollback guidance: Git-installed modules can be re-pinned to the previous commit via `installMcpPackageFromGit` with the prior ref/SHA.
 
 ## 14. Acceptance Criteria
 
-- `installMcpPackageFromGit` installs a public Git package at a pinned tag or commit.
-- The mutation reads `mcp_configuration.json` from the installed package and persists the expected rows.
-- The mutation can fall back to `module.MCP_CONFIGURATION` when no manifest file exists.
-- Persisted modules use `source="git"` and include Git install metadata in their settings.
-- Persisted modules include local version state: requested ref, resolved commit, optional package version, install target, and install/check timestamps.
-- A version check reports `needsRefresh=false` when Git resolves the requested ref to the installed commit.
-- A version check reports `needsRefresh=true` when Git resolves the requested branch/tag/latest tag to a different commit.
+Verified:
+
+- `installMcpPackageFromGit` installs a Git package at a pinned tag, commit, or branch (SSH and HTTPS, public and private).
+- The mutation reads `mcp_configuration.json` from the installed package and persists the expected rows; falls back to `module.MCP_CONFIGURATION` when no manifest file exists.
+- Persisted modules use `source="git"` and include Git install metadata in their settings: requested ref, resolved commit, optional package version, install target, and install/check timestamps.
+- Dependencies already present in the daemon environment are skipped; missing ones are installed into the install target.
+- A version check reports `needsRefresh=false` when Git resolves the requested ref to the installed commit, and `needsRefresh=true` when it resolves to a different commit.
 - Refresh installs a changed version into a new target, validates it, updates metadata, purges import cache, and warms configuration cache.
 - Refresh returns a no-op result when the remote commit is unchanged and the local installation exists.
-- Runtime tool/resource/prompt execution imports from the commit-scoped `install_target` under `/tmp/packages`, not from the S3 extraction root `/tmp/functs`.
+- Runtime tool/resource/prompt execution imports from the commit-scoped `install_target` under `git_install_path`.
 - Restarting the daemon can execute already-installed Git modules without reinstalling.
-- If the install target is missing after restart or container replacement, runtime can reinstall from persisted Git metadata.
 - If Git is unreachable during a version check, the existing local installation remains active.
 - `source="external"` proxy modules continue to work unchanged.
-- `source="s3"` modules continue to execute while S3 compatibility is enabled.
-- When `ENABLE_S3_PACKAGE_UPLOAD=false`, S3 upload/package processing mutations return clear disabled messages without breaking GraphQL schema compatibility.
-- When `FUNCT_BUCKET_NAME` or the S3 client is missing, S3 upload/package processing is effectively disabled even if `ENABLE_S3_PACKAGE_UPLOAD` is configured as true.
-- Private repository installs work when `GIT_TOKEN` is configured and do not leak the token to logs or database rows.
+- Private repository installs work over SSH (system key or `GIT_SSH_KEY`) and HTTPS (`GIT_TOKEN`) without leaking credentials to logs or database rows.
 - Unsupported Git hosts, missing refs when required, invalid package names, and unsafe install paths fail with clear GraphQL error messages.
+
+Pending (Phase 4):
+
+- No S3 package surfaces remain: `generateMcpPackageUploadUrl`, `processMcpPackage`, and `packageBase64` are removed from the schema and `deploy()`.
+- Any residual `source="s3"` row fails at runtime with a clear migration-required error.
+- `enable_s3_package_upload` no longer exists in `Config` or the gateway settings.
 
 ## 15. Test Plan
 
-Recommended tests:
-
 | Test | Target |
 | ---- | ------ |
-| Validate Git URL | Accept allowed HTTPS Git URLs; reject `file://`, local paths, unsupported hosts, and malformed URLs. |
+| Validate Git URL | Accept allowed HTTPS and SSH Git URLs; reject `file://`, local paths, unsupported hosts, and malformed URLs. |
 | Require ref | Verify `git_require_ref=true` rejects empty `gitRef`. |
-| Build direct URL | Verify ref and subdirectory are encoded into the pip direct URL. |
+| Build direct URL | Verify ref, subdirectory, scp normalization, and token injection are encoded into the pip direct URL. |
 | Install target safety | Verify generated paths stay under `git_install_path`; replacement refuses paths outside it. |
-| Resolve remote commit | Mock `git ls-remote`; verify branch/tag refs resolve to commit SHAs. |
+| Resolve remote commit | Mock `git ls-remote`; verify branch/tag refs resolve to commit SHAs; 40-char SHAs short-circuit. |
 | No-op version check | Local `resolved_commit` matches remote commit and install target exists; assert no reinstall. |
 | Refresh-needed check | Remote commit differs; assert `needsRefresh=true`. |
+| Install-target drift | Persisted `install_target` differs from expected (config change); assert reinstall. |
 | TTL behavior | Recent `last_checked_at` skips remote check unless `forceCheck=true`. |
 | Failed remote check | Git check failure leaves local install active and reports a clear error. |
 | Manifest file load | Load `mcp_configuration.json` from a fake installed package. |
 | Manifest import fallback | Import `module.MCP_CONFIGURATION` from a fake install target with cache restoration. |
+| Dependency scan | Requirements satisfied by the daemon environment are skipped; missing ones are pip-installed into the target. |
 | Mutation success | Mock installer and loader; assert `source="git"`, version metadata injection, cache clear, and cache warm. |
 | Refresh mutation no-op | Mock unchanged remote commit; assert loader is not called. |
 | Refresh mutation changed | Mock changed remote commit; assert new target install, manifest validation, loader call, cache purge, and metadata update. |
-| Runtime import | `_get_module(..., source="git")` imports from install target and does not call S3. |
-| Runtime reinstall | Missing install target triggers reinstall when metadata is present. |
+| Runtime import | `_get_module(..., source="git")` imports from install target. |
+| Runtime reinstall | Missing install target errors with a clear reinstall instruction (auto-reinstall deferred). |
 | External compatibility | Existing `source="external"` branch remains covered. |
-| S3 compatibility flag | `ENABLE_S3_PACKAGE_UPLOAD=true` allows legacy upload/package processing; `false` returns disabled responses. |
-| S3 missing config | Missing `FUNCT_BUCKET_NAME` or S3 client makes the effective S3 upload flag false. |
-| S3 runtime compatibility | `source="s3"` continues to load legacy packages until final retirement. |
+| S3 surfaces removed | Schema introspection exposes no `generateMcpPackageUploadUrl`/`processMcpPackage`; `packageBase64` is rejected; `_get_module(source="s3")` raises the migration-required error. |
 
 ## 16. Open Decisions
 
 - Should production allow moving branch refs, or require immutable tags/commit SHAs only?
-- Should `latest_tag` be supported in the first release, and if so what tag pattern should define eligible release tags?
+- What tag pattern should define eligible release tags for `latest_tag`?
 - Should refresh checks happen only through admin GraphQL calls, or should there be startup refresh for selected deployments?
 - Should package distribution name be required when reading `installed_package_version`, or should package version be informational only?
-- Should private repositories be supported only through `GIT_TOKEN`, or also through SSH deploy keys?
-- Should dependency installation be allowed for module packages, or should packages be required to vendor/runtime-declare only pure-Python dependencies?
+- Should private repositories be supported only through `GIT_TOKEN`/SSH keys, or also through SSH deploy keys provisioned per deployment (current: both work; bake-in is the Docker default)?
 - Should install metadata stay in `MCPSetting.setting`, or should a future `MCPModuleDeployment` table track repo URL, ref, commit, status, and errors?
-- Should runtime reinstall be allowed automatically, or should missing packages fail until an admin re-runs the install mutation?
-- How long should `ENABLE_S3_PACKAGE_UPLOAD=true` remain the default before switching to `false`?
+- Should runtime auto-reinstall be implemented for `git_refresh_policy="on_runtime_miss"` (currently logs a warning and errors), or should missing packages always fail until an admin re-runs the install mutation?
+- When should Phase 4 (S3 removal) ship, and are there production `source="s3"` rows that must be migrated first?
 
 ## 17. Reference Map
 
-- `mcp_daemon_engine/handlers/mcp_handlers.py`: existing manifest validation, ZIP processing, Base64 flow, and model-loading sink.
+- `mcp_daemon_engine/handlers/mcp_git.py`: Git installer (URL validation, pip install, commit resolution, dependency scan, manifest loading, version checks).
+- `mcp_daemon_engine/mutations/mcp_git.py`: GraphQL mutations for install/check/refresh.
 - `mcp_daemon_engine/handlers/mcp_utility.py`: runtime source dispatch and dynamic module import.
-- `mcp_daemon_engine/handlers/config.py`: daemon settings, function paths, AWS clients, and MCP configuration cache.
-- `mcp_daemon_engine/mutations/mcp_upload.py`: legacy upload mutations to keep during compatibility period.
-- `mcp_daemon_engine/mutations/mcp_configuration.py`: legacy inline configuration/Base64 entry point.
+- `mcp_daemon_engine/handlers/config.py`: daemon settings, Git install settings, AWS clients, and MCP configuration cache.
+- `mcp_daemon_engine/handlers/mcp_handlers.py`: manifest validation and model-loading sink; its ZIP/Base64 helpers are removal targets (Phase 4).
+- `mcp_daemon_engine/mutations/mcp_upload.py`: legacy upload mutations — removal target (Phase 4).
+- `mcp_daemon_engine/mutations/mcp_configuration.py`: inline configuration entry point; `packageBase64` branch is a removal target (Phase 4).
 - `mcp_daemon_engine/models/dynamodb/mcp_module.py`: DynamoDB module persistence with `source`.
 - `mcp_daemon_engine/models/postgresql/mcp_module.py`: PostgreSQL module persistence with `source`.
 - `mcp_daemon_engine/schema.py`: Graphene mutation registration.
 - `mcp_daemon_engine/main.py`: SilvaEngine deployment metadata and GraphQL dispatch entry point.
-- `docs/MCP_PACKAGE_UPLOAD_SPEC.md`: current ZIP upload/runtime contract.
-
-
-
+- `silvaengine_gateway/silvaengine_gateway/tests/deploy_mcp_git.py`: operator deployment script (install/check/refresh via the gateway).
+- `docs/MCP_PACKAGE_UPLOAD_SPEC.md`: retired ZIP upload/runtime contract (retire note pending Phase 4).
