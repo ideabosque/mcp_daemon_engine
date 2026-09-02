@@ -16,6 +16,11 @@ from .mutations.mcp_function_call import (
     DeleteMcpFunctionCall,
     InsertUpdateMcpFunctionCall,
 )
+from .mutations.mcp_git import (
+    CheckMcpGitPackageVersion,
+    InstallMcpPackageFromGit,
+    RefreshMcpGitPackage,
+)
 from .mutations.mcp_module import DeleteMcpModule, InsertUpdateMcpModule
 from .mutations.mcp_setting import DeleteMcpSetting, InsertUpdateMcpSetting
 from .mutations.mcp_upload import (
@@ -163,6 +168,9 @@ class Mutations(ObjectType):
     sync_external_mcp_server = SyncExternalMcpServer.Field()
     generate_mcp_package_upload_url = GenerateMcpPackageUploadUrl.Field()
     process_mcp_package = ProcessMcpPackage.Field()
+    install_mcp_package_from_git = InstallMcpPackageFromGit.Field()
+    check_mcp_git_package_version = CheckMcpGitPackageVersion.Field()
+    refresh_mcp_git_package = RefreshMcpGitPackage.Field()
     insert_update_mcp_function = InsertUpdateMcpFunction.Field()
     delete_mcp_function = DeleteMcpFunction.Field()
     insert_update_mcp_function_call = InsertUpdateMcpFunctionCall.Field()
