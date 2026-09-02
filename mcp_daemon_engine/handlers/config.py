@@ -237,6 +237,21 @@ class Config:
     jwks_endpoint: AnyUrl | None = None
     jwks_cache_ttl: int | None = None  # seconds
 
+    # ------------- Git module install settings --------------
+    git_install_path: str = "/tmp/packages"
+    git_install_timeout: int = 300
+    git_allowed_hosts: str = "github.com"
+    git_token: str | None = None
+    git_ssh_key: str | None = None
+    git_require_ref: bool = True
+    git_refresh_policy: str = "manual"  # manual | on_startup | on_runtime_miss
+    git_refresh_ttl: int = 3600
+    git_version_strategy: str = "ref"  # ref | latest_tag | package_version
+    git_tag_pattern: str | None = None
+
+    # ------------- S3 package upload compatibility flag --------------
+    enable_s3_package_upload: bool = True
+
     @classmethod
     def initialize(cls, logger: logging.Logger, setting: Dict[str, Any]) -> None:
         """
@@ -274,8 +289,18 @@ class Config:
             if setting.get("initialize_tables"):
                 cls._initialize_tables(logger)
 
+            # Compute the effective S3 package-upload flag: the raw setting
+            # AND (bucket configured) AND (S3 client available).
+            cls.enable_s3_package_upload = (
+                cls.enable_s3_package_upload
+                and bool(cls.funct_bucket_name)
+                and cls.aws_s3 is not None
+            )
+
             logger.info(
-                f"Configuration initialized successfully (db_backend={cls.DB_BACKEND})."
+                f"Configuration initialized successfully "
+                f"(db_backend={cls.DB_BACKEND}, "
+                f"enable_s3_package_upload={cls.enable_s3_package_upload})."
             )
         except Exception as e:
             logger.exception("Failed to initialize configuration.")
@@ -310,6 +335,26 @@ class Config:
             cls.mcp_configuration["default"] = setting["mcp_configuration"]
             cls.logger.info("MCP Configuration loaded successfully.")
 
+        # --- Git module install settings ---
+        cls.git_install_path = setting.get("git_install_path") or "/tmp/packages"
+        cls.git_install_timeout = int(setting.get("git_install_timeout", 300))
+        cls.git_allowed_hosts = setting.get("git_allowed_hosts") or "github.com"
+        cls.git_token = setting.get("git_token")
+        cls.git_ssh_key = setting.get("git_ssh_key")
+        cls.git_require_ref = (
+            str(setting.get("git_require_ref", True)).lower() != "false"
+        )
+        cls.git_refresh_policy = setting.get("git_refresh_policy") or "manual"
+        cls.git_refresh_ttl = int(setting.get("git_refresh_ttl", 3600))
+        cls.git_version_strategy = setting.get("git_version_strategy") or "ref"
+        cls.git_tag_pattern = setting.get("git_tag_pattern")
+
+        # --- S3 package upload compatibility flag ---
+        # Effective only when S3 is also configured (bucket + client).
+        cls.enable_s3_package_upload = bool(
+            setting.get("enable_s3_package_upload", True)
+        )
+
     @classmethod
     def _setup_function_paths(cls, setting: Dict[str, Any]) -> None:
         cls.funct_bucket_name = setting.get("funct_bucket_name")
@@ -332,6 +377,7 @@ class Config:
         )
         os.makedirs(cls.funct_zip_path, exist_ok=True)
         os.makedirs(cls.funct_extract_path, exist_ok=True)
+        os.makedirs(cls.git_install_path, exist_ok=True)
 
     @classmethod
     def _initialize_aws_services(

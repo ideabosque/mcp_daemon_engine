@@ -9,6 +9,7 @@ from typing import Any, Dict
 from graphene import Boolean, DateTime, Field, Mutation, String
 from silvaengine_utility import JSONCamelCase
 
+from ..handlers.config import Config
 from ..handlers.mcp_handlers import (
     generate_upload_url,
     process_mcp_package,
@@ -30,6 +31,14 @@ class GenerateMcpPackageUploadUrl(Mutation):
     def mutate(
         root: Any, info: Any, **kwargs: Dict[str, Any]
     ) -> "GenerateMcpPackageUploadUrl":
+        if not Config.enable_s3_package_upload:
+            return GenerateMcpPackageUploadUrl(
+                ok=False,
+                message=(
+                    "S3 package upload is disabled. "
+                    "Use installMcpPackageFromGit for Git-based deployment."
+                ),
+            )
         try:
             package_name = kwargs["package_name"]
 
@@ -71,6 +80,14 @@ class ProcessMcpPackage(Mutation):
     def mutate(
         root: Any, info: Any, **kwargs: Dict[str, Any]
     ) -> "ProcessMcpPackage":
+        if not Config.enable_s3_package_upload:
+            return ProcessMcpPackage(
+                ok=False,
+                message=(
+                    "S3 package processing is disabled. "
+                    "Use installMcpPackageFromGit for Git-based deployment."
+                ),
+            )
         try:
             stats = process_mcp_package(info, **kwargs)
 

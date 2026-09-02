@@ -9,6 +9,7 @@ from typing import Any, Dict
 from graphene import Boolean, Field, Mutation, String
 from silvaengine_utility import JSONCamelCase
 
+from ..handlers.config import Config
 from ..handlers.mcp_handlers import load_mcp_configuration_into_models, process_base64_package
 from ..types.mcp_configuration_stats import McpConfigurationStats
 
@@ -33,6 +34,15 @@ class LoadMcpConfiguration(Mutation):
     ) -> "LoadMcpConfiguration":
         try:
             if kwargs.get("package_base64"):
+                if not Config.enable_s3_package_upload:
+                    return LoadMcpConfiguration(
+                        ok=False,
+                        message=(
+                            "Base64 ZIP loading is disabled "
+                            "(S3 package upload is disabled). "
+                            "Use installMcpPackageFromGit for Git-based deployment."
+                        ),
+                    )
                 stats = process_base64_package(info, **kwargs)
             else:
                 stats = load_mcp_configuration_into_models(info, **kwargs)

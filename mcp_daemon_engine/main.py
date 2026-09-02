@@ -88,6 +88,18 @@ def deploy() -> List:
                             "action": "processMcpPackage",
                             "label": "Process MCP Package",
                         },
+                        {
+                            "action": "installMcpPackageFromGit",
+                            "label": "Install MCP Package from Git",
+                        },
+                        {
+                            "action": "checkMcpGitPackageVersion",
+                            "label": "Check MCP Git Package Version",
+                        },
+                        {
+                            "action": "refreshMcpGitPackage",
+                            "label": "Refresh MCP Git Package",
+                        },
                     ],
                     "type": "RequestResponse",
                     "support_methods": ["POST"],
@@ -403,6 +415,9 @@ _CONFIG_MUTATIONS = {
     "syncExternalMcpServer",
     "generateMcpPackageUploadUrl",
     "processMcpPackage",
+    "installMcpPackageFromGit",
+    "checkMcpGitPackageVersion",
+    "refreshMcpGitPackage",
 }
 
 
