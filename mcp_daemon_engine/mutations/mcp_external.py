@@ -7,7 +7,7 @@ import traceback
 from typing import Any, Dict
 
 from graphene import Boolean, Field, Mutation, String
-from silvaengine_utility import JSONCamelCase
+from silvaengine_utility import JSONSnakeCase
 
 from ..handlers.mcp_external import sync_external_mcp_server
 from ..types.mcp_configuration_stats import McpConfigurationStats
@@ -22,7 +22,13 @@ class SyncExternalMcpServer(Mutation):
         server_name = String(required=True)
         base_url = String(required=True)
         bearer_token = String(required=False)
-        headers = JSONCamelCase(required=False)
+        # Key-preserving JSON: HTTP header names (e.g. "Part-Id", "X-Api-Key")
+        # must reach the upstream verbatim. JSONCamelCase snake-cases keys on
+        # input ("Part-Id" -> "part_id"), which changes the header name and
+        # even collapses distinct keys, so external servers that require a
+        # header like Part-Id reject the request. JSONSnakeCase leaves the
+        # keys untouched on the input path.
+        headers = JSONSnakeCase(required=False)
         name_prefix = String(required=False)
         updated_by = String(required=True)
 
