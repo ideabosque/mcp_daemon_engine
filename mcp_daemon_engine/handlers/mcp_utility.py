@@ -518,28 +518,131 @@ def _import_module_from_extract_path(module_name: str) -> ModuleType:
     return module
 
 
-def _get_module(package_name: str, module_name: str, source: str = None) -> ModuleType:
+def _import_git_module(
+    module_name: str,
+    module_setting: Dict[str, Any] = None,
+) -> ModuleType:
+    """Import a Git-installed MCP module from its commit-scoped install target.
+
+    The ``install_target`` is read from ``module_setting`` (stored in
+    ``MCPSetting.setting`` during ``installMcpPackageFromGit``).
+
+    If the install target is missing and ``git_refresh_policy`` is
+    ``on_runtime_miss``, a reinstall is attempted using persisted Git metadata.
+    Otherwise the missing target is a hard error.
+    """
+    setting = module_setting or {}
+    install_target = setting.get("install_target", "")
+
+    if not install_target:
+        raise ImportError(
+            f"Git module '{module_name}' has no install_target in its setting. "
+            f"Run installMcpPackageFromGit first."
+        )
+
+    if not os.path.isdir(install_target):
+        if Config.git_refresh_policy == "on_runtime_miss":
+            # Auto-reinstall from persisted Git metadata is planned but not
+            # callable from the runtime path yet (refresh requires a
+            # ResolveInfo context that runtime imports do not have).
+            # Fail with a clear message pointing at the admin mutation.
+            Config.logger.warning(
+                f"Git install target missing for '{module_name}': "
+                f"{install_target} (git_refresh_policy=on_runtime_miss)."
+            )
+        raise ImportError(
+            f"Git install target missing for '{module_name}': "
+            f"{install_target}. "
+            f"Run refreshMcpGitPackage or installMcpPackageFromGit "
+            f"to reinstall."
+        )
+        raise ImportError(
+            f"Git install target missing for '{module_name}': "
+            f"{install_target}. "
+            f"Run installMcpPackageFromGit to install."
+        )
+
+    # Insert the install target into sys.path and import
+    if install_target not in sys.path:
+        sys.path.insert(0, install_target)
+
+    purge_module_import_cache(module_name)
+
+    # Try importing as a package or a single module file from the install target
+    module_root = os.path.join(install_target, module_name)
+    module_file = os.path.join(install_target, f"{module_name}.py")
+
+    if os.path.isdir(module_root):
+        init_file = os.path.join(module_root, "__init__.py")
+        if os.path.isfile(init_file):
+            spec = importlib.util.spec_from_file_location(
+                module_name,
+                init_file,
+                submodule_search_locations=[module_root],
+            )
+        else:
+            spec = None
+    elif os.path.isfile(module_file):
+        spec = importlib.util.spec_from_file_location(module_name, module_file)
+    else:
+        # Fall back to standard importlib (pip --target may have installed
+        # it as a properly packaged distribution)
+        return importlib.import_module(module_name)
+
+    if spec is None or spec.loader is None:
+        raise ImportError(
+            f"Could not create import spec for Git module '{module_name}' "
+            f"from {install_target}"
+        )
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _import_s3_module(package_name: str, module_name: str) -> ModuleType:
+    """Import a legacy S3-deployed MCP module (ZIP download + extract)."""
+    if not _module_exists(module_name):
+        _download_and_extract_package(package_name)
+
+    module_path = Config.funct_extract_path
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+
+    return _import_module_from_extract_path(module_name)
+
+
+def _get_module(
+    package_name: str,
+    module_name: str,
+    source: str = None,
+    module_setting: Dict[str, Any] = None,
+) -> ModuleType:
+    """Get the module object for the given source.
+
+    Source dispatch (explicit provider branches):
+        ``external``  → built-in external MCP proxy adapter.
+        ``git``       → import from commit-scoped ``install_target``.
+        ``s3``        → legacy ZIP download/extract from S3.
+        ``local``/````/``None`` → direct ``importlib`` import from daemon sys.path.
+    """
     try:
-        """Get the module class from the package."""
-        if source == "external":
+        source_key = (source or "local").lower()
+
+        if source_key == "external":
             from . import external_mcp_proxy as module
 
             return module
 
-        if source is None:
-            return getattr(__import__(module_name), module_name)
+        if source_key == "git":
+            return _import_git_module(module_name, module_setting)
 
-        # Check if the module exists
-        if not _module_exists(module_name):
-            # Download and extract the module if it doesn't exist
-            _download_and_extract_package(package_name)
+        if source_key == "s3":
+            return _import_s3_module(package_name, module_name)
 
-        # Add the extracted module to sys.path
-        module_path = f"{Config.funct_extract_path}"
-        if module_path not in sys.path:
-            sys.path.insert(0, module_path)
-
-        return _import_module_from_extract_path(module_name)
+        # local / empty / None → direct import
+        return importlib.import_module(module_name)
     except Exception as e:
         log = traceback.format_exc()
         Config.logger.error(log)
@@ -547,11 +650,20 @@ def _get_module(package_name: str, module_name: str, source: str = None) -> Modu
 
 
 def _get_class(
-    package_name: str, module_name: str, class_name: str, source: str = None
+    package_name: str,
+    module_name: str,
+    class_name: str,
+    source: str = None,
+    module_setting: Dict[str, Any] = None,
 ) -> Optional[type]:
     try:
         # Import the module and get the class
-        module = _get_module(package_name, module_name, source=source)
+        module = _get_module(
+            package_name,
+            module_name,
+            source=source,
+            module_setting=module_setting,
+        )
         return getattr(module, class_name)
     except Exception as e:
         log = traceback.format_exc()
@@ -677,6 +789,7 @@ def execute_tool_function(
             module["module_name"],
             module["class_name"],
             source=module.get("source"),
+            module_setting=module.get("setting"),
         )
 
         if tool_class is None:
@@ -841,6 +954,7 @@ def execute_resource_function(
             module["module_name"],
             module["class_name"],
             source=module.get("source"),
+            module_setting=module.get("setting"),
         )
 
         if resource_class is None:
@@ -922,6 +1036,7 @@ def execute_prompt_function(
             module["module_name"],
             module["class_name"],
             source=module.get("source"),
+            module_setting=module.get("setting"),
         )
 
         if prompt_class is None:
