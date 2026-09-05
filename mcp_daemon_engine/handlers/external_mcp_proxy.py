@@ -47,21 +47,46 @@ class ExternalMCPProxy:
     def call_tool(self, **arguments):
         name = self._mcp_function_name
         external_name = self._resolve_external_name(name, "tool")
-        result = self._run_async(
-            self._client_call_tool(external_name, arguments)
-        )
+        try:
+            result = self._run_async(
+                self._client_call_tool(external_name, arguments)
+            )
+        except Exception as e:
+            raise self._augment_exception(e, "tool", name, external_name) from e
         return self._content_to_text(result)
 
     def read_resource(self, uri: str):
-        result = self._run_async(self._client_read_resource(uri))
+        try:
+            result = self._run_async(self._client_read_resource(uri))
+        except Exception as e:
+            raise self._augment_exception(e, "resource", uri, uri) from e
         return self._read_resource_to_text(result)
 
     def get_prompt(self, name: str, **arguments):
         external_name = self._resolve_external_name(name, "prompt")
-        result = self._run_async(
-            self._client_get_prompt(external_name, arguments)
-        )
+        try:
+            result = self._run_async(
+                self._client_get_prompt(external_name, arguments)
+            )
+        except Exception as e:
+            raise self._augment_exception(e, "prompt", name, external_name) from e
         return self._prompt_to_text(result)
+
+    def _augment_exception(
+        self, exc: Exception, mcp_type: str, local_name, external_name
+    ) -> Exception:
+        """Wrap an upstream error with the context needed to diagnose it.
+
+        The daemon has multiple external servers registered; without the
+        base_url and the local/external name pair in the message, an
+        MCPConnectionError buried three frames deep tells the operator
+        nothing about which sync's settings are wrong.
+        """
+        return type(exc)(
+            f"ExternalMCPProxy call failed | mcp_type={mcp_type} "
+            f"local_name={local_name!r} external_name={external_name!r} "
+            f"base_url={self.base_url!r} | upstream error: {exc}"
+        )
 
     def _resolve_external_name(self, local_name, mcp_type):
         bucket_key = {
