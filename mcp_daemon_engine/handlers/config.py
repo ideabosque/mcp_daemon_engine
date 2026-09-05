@@ -985,12 +985,28 @@ class Config:
                                 "setting", {}
                             )
 
-                        # Build module info
+                        # Build module info. `JSONSnakeCase.serialize`
+                        # snake-cases every dict key it walks — but HTTP
+                        # header names inside `setting["headers"]`
+                        # (e.g. "Part-Id", "x-api-key") MUST reach the
+                        # upstream server verbatim, or servers that key on
+                        # canonical mixed-case headers will reject the
+                        # request (e.g. "Part-Id header is required to
+                        # construct partition_key"). Restore the raw
+                        # headers dict after serialization.
+                        serialized_setting = JSONSnakeCase.serialize(setting_data)
+                        if (
+                            isinstance(setting_data, dict)
+                            and isinstance(setting_data.get("headers"), dict)
+                            and isinstance(serialized_setting, dict)
+                        ):
+                            serialized_setting["headers"] = setting_data["headers"]
+
                         module_info = {
                             "module_name": module_name,
                             "package_name": module_data.get("packageName", module_name),
                             "class_name": class_name,
-                            "setting": JSONSnakeCase.serialize(setting_data),
+                            "setting": serialized_setting,
                             "source": module_data.get("source", ""),
                         }
                         modules_info.append(module_info)
