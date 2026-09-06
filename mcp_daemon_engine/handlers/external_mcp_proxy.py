@@ -40,6 +40,8 @@ class ExternalMCPProxy:
         self.headers = setting.get("headers") or {}
         self.name_prefix = setting.get("name_prefix") or ""
         self._mcp_function_name: str | None = None
+        # Optional total request timeout (seconds) forwarded to MCPHttpClient.
+        self.timeout = setting.get("timeout")
 
         if not self.base_url:
             raise ValueError("ExternalMCPProxy requires 'base_url' in setting")
@@ -156,6 +158,8 @@ class ExternalMCPProxy:
             s["bearer_token"] = self.bearer_token
         if self.headers:
             s["headers"] = self.headers
+        if self.timeout is not None:
+            s["timeout"] = self.timeout
         return s
 
     def _content_to_text(self, content):
