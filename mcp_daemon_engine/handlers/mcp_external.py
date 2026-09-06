@@ -51,13 +51,15 @@ def _run_async(coro):
 
 
 async def _fetch_external_inventory(
-    logger, base_url, bearer_token=None, headers=None
+    logger, base_url, bearer_token=None, headers=None, timeout=None
 ) -> Dict[str, List]:
     client_settings = {"base_url": base_url}
     if bearer_token:
         client_settings["bearer_token"] = bearer_token
     if headers:
         client_settings["headers"] = headers
+    if timeout is not None:
+        client_settings["timeout"] = timeout
 
     async with MCPHttpClient(logger, **client_settings) as client:
         tools = await client.list_tools()
@@ -172,7 +174,8 @@ def _build_manifest(
 
 
 def sync_external_mcp_server(
-    info, *, server_name, base_url, bearer_token, headers, name_prefix, updated_by
+    info, *, server_name, base_url, bearer_token, headers, name_prefix, updated_by,
+    timeout=None
 ) -> Dict[str, Any]:
     _validate_external_server_name(server_name)
     _validate_base_url(base_url)
@@ -185,6 +188,7 @@ def sync_external_mcp_server(
             base_url=base_url,
             bearer_token=bearer_token,
             headers=headers or {},
+            timeout=timeout,
         )
     )
 
