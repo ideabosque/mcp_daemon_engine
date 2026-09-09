@@ -227,7 +227,7 @@ def load_mcp_configuration_into_models(
                         "package_name", module.get("module_name")
                     ),
                     "classes": classes,
-                    "source": module.get("source", kwargs.get("source", "")),
+                    "source": module.get("source") or kwargs.get("source", ""),
                     "updated_by": updated_by,
                 }
                 get_repo("mcp_module").insert_update(info, **module_data)
