@@ -47,7 +47,13 @@ def invoke_capability_tool(
            arguments containing the uuid if supplied) and build the
            invocation view.
     """
-    from .mcp_utility import execute_tool_function
+    import pendulum
+
+    from .mcp_utility import (
+        _check_existing_function_call,
+        _insert_update_mcp_function_call,
+        execute_tool_function,
+    )
 
     logger = info.context.get("logger") or Config.logger
     partition_key = info.context.get("partition_key")
@@ -73,8 +79,35 @@ def invoke_capability_tool(
             **({"trace_id": trace_id} if trace_id else {}),
         }
 
-    start = Config.logger and None
-    import pendulum
+    # --- Pre-create the audit row so we own its UUID ---
+    # Without this, the post-execute "latest by name/partition" lookup was
+    # racy: two concurrent invocations of the same tool would scramble each
+    # other's rows. execute_decorator finds the pre-created row via
+    # _check_existing_function_call(uuid) and updates it in place, so no
+    # second row is created and no ambiguity remains.
+    invocation_uuid = None
+    created_at = None
+    updated_at = None
+    try:
+        pre_row = _insert_update_mcp_function_call(
+            partition_key,
+            name=name,
+            mcp_type="tool",
+            arguments=call_args,
+        )
+        invocation_uuid = (
+            pre_row.get("mcpFunctionCallUuid")
+            if isinstance(pre_row, dict)
+            else None
+        )
+        created_at = (
+            pre_row.get("createdAt") if isinstance(pre_row, dict) else None
+        )
+    except Exception as e:
+        logger.warning(
+            f"Failed to pre-create invocation audit row for '{name}': {e} "
+            f"— falling back to a best-effort post-hoc lookup"
+        )
 
     start_time = pendulum.now("UTC")
     status = "completed"
@@ -82,7 +115,12 @@ def invoke_capability_tool(
     result_payload: Any = None
 
     try:
-        content_items = execute_tool_function(partition_key, name, call_args)
+        content_items = execute_tool_function(
+            partition_key,
+            name,
+            call_args,
+            mcp_function_call_uuid=invocation_uuid,
+        )
 
         # Normalize the MCP content list into a payload dict.
         payload_items = []
@@ -93,7 +131,9 @@ def invoke_capability_tool(
                 )
             else:
                 payload_items.append({"type": "text", "text": str(item)})
-        result_payload = payload_items[0] if len(payload_items) == 1 else payload_items
+        result_payload = (
+            payload_items[0] if len(payload_items) == 1 else payload_items
+        )
     except Exception as e:
         status = "failed"
         error_message = traceback.format_exc()
@@ -104,45 +144,28 @@ def invoke_capability_tool(
         (pendulum.now("UTC") - start_time).total_seconds() * 1000
     )
 
-    # --- Fetch the audit record for the invocation id ---
-    invocation_uuid = None
-    created_at = None
-    updated_at = None
+    # --- Fetch the final state of the audit row by UUID (deterministic) ---
     request_payload = call_args
-    try:
-        # The most recent audit record for this tool/partition is the one
-        # the decorator just wrote.
-        from ..models.repositories import get_repo
-
-        result = get_repo("mcp_function_call").list(
-            _InfoLike(partition_key), name=name, limit=1
-        )
-        rows = getattr(result, "mcp_function_call_list", None) or []
-        if rows:
-            row = rows[0]
-            if isinstance(row, dict):
-                invocation_uuid = row.get("mcp_function_call_uuid")
-                created_at = row.get("created_at")
-                updated_at = row.get("updated_at")
+    if invocation_uuid:
+        try:
+            row = _check_existing_function_call(partition_key, invocation_uuid)
+            if row:
+                created_at = row.get("createdAt") or created_at
+                updated_at = row.get("updatedAt")
                 status = row.get("status") or status
-                time_spent_ms = row.get("time_spent") or time_spent_ms
+                time_spent_ms = row.get("timeSpent") or time_spent_ms
                 args_row = row.get("arguments")
-            else:
-                invocation_uuid = getattr(row, "mcp_function_call_uuid", None)
-                created_at = getattr(row, "created_at", None)
-                updated_at = getattr(row, "updated_at", None)
-                status = getattr(row, "status", None) or status
-                time_spent_ms = getattr(row, "time_spent", None) or time_spent_ms
-                args_row = getattr(row, "arguments", None)
-            if isinstance(args_row, str):
-                try:
-                    args_row = Serializer.json_loads(args_row)
-                except Exception:
-                    args_row = None
-            if isinstance(args_row, dict):
-                request_payload = args_row
-    except Exception as e:
-        logger.warning(f"Failed to read invocation audit record: {e}")
+                if isinstance(args_row, str):
+                    try:
+                        args_row = Serializer.json_loads(args_row)
+                    except Exception:
+                        args_row = None
+                if isinstance(args_row, dict):
+                    request_payload = args_row
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch final audit row {invocation_uuid!r}: {e}"
+            )
 
     message = (
         f"Tool '{name}' {status}"
@@ -167,16 +190,6 @@ def invoke_capability_tool(
         "updated_at": updated_at,
         "message": message,
     }
-
-
-class _InfoLike:
-    """Minimal info-like object for repository list calls."""
-
-    def __init__(self, partition_key: str):
-        self.context = {
-            "partition_key": partition_key,
-            "logger": Config.get_logger(),
-        }
 
 
 __all__ = ["invoke_capability_tool"]

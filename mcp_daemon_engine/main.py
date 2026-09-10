@@ -136,6 +136,14 @@ def deploy() -> List:
                             "action": "testCapabilityMcpTool",
                             "label": "Test Capability MCP Tool",
                         },
+                        {
+                            "action": "unregisterCapabilityMcp",
+                            "label": "Unregister Capability MCP",
+                        },
+                        {
+                            "action": "registerCapabilityMcp",
+                            "label": "Register Capability MCP (unified)",
+                        },
                     ],
                     "type": "RequestResponse",
                     "support_methods": ["POST"],
@@ -174,6 +182,14 @@ class MCPDaemonEngine(Graphql):
         Graphql.__init__(self, logger, **setting)
         self.logger = logger
         self.setting = setting
+
+        # Auto-initialize Config on first instantiation so ad-hoc scripts and
+        # tests don't silently fall back to the default DB_BACKEND. In the
+        # gateway path the daemon startup calls Config.initialize() explicitly
+        # before any request-time _engine() spawn, so Config.setting is
+        # non-empty by then — this block is a no-op there.
+        if not Config.setting:
+            Config.initialize(logger, setting)
 
         # BaseModel.Meta setup is now owned by Config._initialize_dynamodb_meta(),
         # called during Config.initialize(). No need to set it here.
@@ -455,12 +471,14 @@ _CONFIG_MUTATIONS = {
     "checkMcpGitPackageVersion",
     "refreshMcpGitPackage",
     "registerCapabilityRemoteMcp",
+    "registerCapabilityMcp",
     "generateCapabilityCustomMcpUploadUrl",
     "registerCapabilityCustomMcpPackage",
     "registerCapabilityCustomMcpPackageBase64",
     "registerCapabilityCustomMcpGitPackage",
     "refreshCapabilityCustomMcpGitPackage",
     "checkCapabilityCustomMcpGitPackageVersion",
+    "unregisterCapabilityMcp",
 }
 
 

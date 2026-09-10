@@ -13,12 +13,14 @@ from .mutations.capability_mcp import (
     CheckCapabilityCustomMcpGitPackageVersion,
     GenerateCapabilityCustomMcpUploadUrl,
     InvokeCapabilityMcpTool,
+    RefreshCapabilityCustomMcpGitPackage,
     RegisterCapabilityCustomMcpGitPackage,
     RegisterCapabilityCustomMcpPackage,
     RegisterCapabilityCustomMcpPackageBase64,
+    RegisterCapabilityMcp,
     RegisterCapabilityRemoteMcp,
-    RefreshCapabilityCustomMcpGitPackage,
     TestCapabilityMcpTool,
+    UnregisterCapabilityMcp,
 )
 from .mutations.mcp_configuration import LoadMcpConfiguration
 from .mutations.mcp_external import SyncExternalMcpServer
@@ -62,6 +64,7 @@ from .types.capability_mcp import (
     CapabilityMcpTool,
     CapabilityMcpToolConnection,
     CapabilityMcpTransport,
+    CapabilityMcpUnregistrationPayload,
 )
 from .types.mcp_function import MCPFunctionListType, MCPFunctionType
 from .types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
@@ -88,6 +91,7 @@ def type_class():
         CapabilityMcpTransport,
         CapabilityMcpInvocation,
         CapabilityMcpInvocationConnection,
+        CapabilityMcpUnregistrationPayload,
     ]
 
 
@@ -296,6 +300,9 @@ class Mutations(ObjectType):
     # ------------------------------------------------------------------
     # Capability Engine MCP compatibility mutations
     # ------------------------------------------------------------------
+    # Unified face-outside register (recommended for Banyanos clients):
+    register_capability_mcp = RegisterCapabilityMcp.Field()
+    # Individual register mutations (backward compat / strict-arg enforcement):
     register_capability_remote_mcp = RegisterCapabilityRemoteMcp.Field()
     generate_capability_custom_mcp_upload_url = (
         GenerateCapabilityCustomMcpUploadUrl.Field()
@@ -317,6 +324,7 @@ class Mutations(ObjectType):
     )
     invoke_capability_mcp_tool = InvokeCapabilityMcpTool.Field()
     test_capability_mcp_tool = TestCapabilityMcpTool.Field()
+    unregister_capability_mcp = UnregisterCapabilityMcp.Field()
     insert_update_mcp_function = InsertUpdateMcpFunction.Field()
     delete_mcp_function = DeleteMcpFunction.Field()
     insert_update_mcp_function_call = InsertUpdateMcpFunctionCall.Field()

@@ -127,6 +127,24 @@ class CapabilityMcpGitVersionInfo(ObjectType):
     last_checked_at = DateTime()
 
 
+class CapabilityMcpUnregistrationPayload(ObjectType):
+    """Result payload for compatibility deregister mutations.
+
+    Reports the deletion outcome: how many function rows were removed,
+    whether the shared setting row was deleted or preserved (because
+    another module still references it). Never touches disk or S3.
+    """
+
+    ok = Boolean(required=True)
+    message = String()
+    module_name = String()
+    transport = String()
+    source = String()
+    deleted_functions = Int()
+    deleted_setting = Boolean()
+    setting_kept = Boolean()
+
+
 class CapabilityMcpInvocation(ObjectType):
     """Invocation compatibility view over MCPFunctionCall + execution result."""
 

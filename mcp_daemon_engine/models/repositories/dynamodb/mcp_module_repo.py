@@ -24,10 +24,17 @@ class MCPModuleRepository(EntityRepository):
         module_name = keys.get("module_name")
         if not partition_key or not module_name:
             return None
-        count = _mod_mod.get_mcp_module_count(partition_key, module_name)
-        if count == 0:
+        # NOTE: previously did a get_mcp_module_count() prefetch to skip the
+        # PynamoDB DoesNotExist when the row was missing. That count Query
+        # returned 0 for freshly written rows (index consistency / cache
+        # interaction), so the compat layer's unregister would report
+        # "Module not found" while a direct get_mcp_module() succeeded. Fall
+        # back to a straight get; catch DoesNotExist and treat it as None.
+        try:
+            row = _mod_mod.get_mcp_module(partition_key, module_name)
+        except _mod_mod.MCPModuleModel.DoesNotExist:
             return None
-        return _normalize(_mod_mod.get_mcp_module(partition_key, module_name))
+        return _normalize(row) if row else None
 
     def count(self, **keys: Any) -> int:
         partition_key = keys.get("partition_key")

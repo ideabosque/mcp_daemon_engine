@@ -67,9 +67,7 @@ def _paginate(rows: list, page_number: int, limit: int) -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_transport(
-    module: Dict[str, Any], setting: Dict[str, Any]
-) -> str:
+def _resolve_transport(module: Dict[str, Any]) -> str:
     """Deployment-config check first: it can promote a row that would
     otherwise resolve as CUSTOM."""
     module_name = module.get("module_name", "")
@@ -120,29 +118,45 @@ def _provider_view_dict(
     # the compatibility registration mutations.
     metadata = setting.get("capability_metadata") or {}
 
-    # Count enabled tools for this module.
+    # Count enabled tools for this module. Read from the cached MCP
+    # configuration's ``module_links`` (a flat list of tool/resource/prompt
+    # → module bindings the config already assembles per partition). This
+    # avoids issuing one filtered repo.list per module — a hot provider list
+    # over N modules would otherwise cost N filtered queries. The cached
+    # ``tools`` list doesn't carry ``module_name`` (see
+    # Config._build_function_config), so ``module_links`` is the right index.
+    tool_count = 0
     try:
-        functions = get_repo("mcp_function").list(
-            _info_stub(partition_key), module_name=module_name, limit=10000
-        )
-        fn_list = getattr(functions, "mcp_function_list", None) or []
+        cached = Config.fetch_mcp_configuration(partition_key) or {}
+        for link in cached.get("module_links", []):
+            if (
+                link.get("module_name") == module_name
+                and link.get("type") == "tool"
+            ):
+                tool_count += 1
     except Exception:
-        fn_list = []
-    tool_rows = []
-    for fn in fn_list:
-        # list() may return type instances (attribute access) or dicts
-        if isinstance(fn, dict):
-            mcp_type = fn.get("mcp_type")
-            status = fn.get("status")
-        else:
-            mcp_type = getattr(fn, "mcp_type", None)
-            status = getattr(fn, "status", None)
-        if mcp_type == "tool" and status != 0:
-            tool_rows.append(fn)
+        # Fallback to a targeted repo query only when the cache is
+        # unavailable (first request after boot, cache clear, error path).
+        try:
+            functions = get_repo("mcp_function").list(
+                _info_stub(partition_key),
+                module_name=module_name,
+                limit=10000,
+            )
+            for fn in getattr(functions, "mcp_function_list", None) or []:
+                if isinstance(fn, dict):
+                    mcp_type, status = fn.get("mcp_type"), fn.get("status")
+                else:
+                    mcp_type = getattr(fn, "mcp_type", None)
+                    status = getattr(fn, "status", None)
+                if mcp_type == "tool" and status != 0:
+                    tool_count += 1
+        except Exception:
+            tool_count = 0
 
-    transport = _resolve_transport(module, setting)
+    transport = _resolve_transport(module)
 
-    status = "ACTIVE" if tool_rows else "INACTIVE"
+    status = "ACTIVE" if tool_count > 0 else "INACTIVE"
 
     auth_type = "NONE"
     if setting.get("bearer_token"):
@@ -177,7 +191,7 @@ def _provider_view_dict(
         "protocol_version": setting.get("protocol_version") or "2025-03-26",
         "status": status,
         "register_status": "SUCCESS",
-        "tool_count": len(tool_rows),
+        "tool_count": tool_count,
         "config": config,
         "created_at": created_at,
         "updated_at": updated_at,
@@ -324,14 +338,14 @@ def resolve_capability_mcp_server_tools(
 ) -> Optional[Dict[str, Any]]:
     """List tools belonging to one provider/server (MCPFunction rows by
     module_name)."""
-    partition_key = info.context["partition_key"]
     module_id = kwargs.get("id")
     if not module_id:
         return None
 
-    kwargs.setdefault("provider_id", module_id)
-    kwargs.pop("id", None)
-    return resolve_capability_mcp_tool_list(info, **kwargs)
+    # Build a fresh kwargs dict — never mutate the caller's mapping.
+    tool_list_kwargs = {k: v for k, v in kwargs.items() if k != "id"}
+    tool_list_kwargs.setdefault("provider_id", module_id)
+    return resolve_capability_mcp_tool_list(info, **tool_list_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +368,6 @@ def _tool_view_dict(
         function_name = fn.get("function_name")
         return_type = fn.get("return_type")
         is_async = fn.get("is_async")
-        external_name = None
     else:
         name = getattr(fn, "name", None)
         description = getattr(fn, "description", None)
@@ -367,7 +380,6 @@ def _tool_view_dict(
         function_name = getattr(fn, "function_name", None)
         return_type = getattr(fn, "return_type", None)
         is_async = getattr(fn, "is_async", None)
-        external_name = None
 
     if isinstance(data, str):
         try:
@@ -376,6 +388,11 @@ def _tool_view_dict(
             data = {}
     if not isinstance(data, dict):
         data = {}
+
+    # `external_name` is stored inside data by the external sync manifest
+    # translator (§8 of the plan). It must round-trip through the compat
+    # view so the proxy can map local -> upstream names.
+    external_name = data.get("external_name")
 
     is_deprecated = status == 0
     status_str = "UNAVAILABLE" if is_deprecated else "AVAILABLE"
@@ -478,31 +495,38 @@ def resolve_capability_mcp_tool_list(
 def resolve_capability_mcp_invocation_list(
     info: ResolveInfo, **kwargs: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Invocation history over MCPFunctionCall rows (compatibility view)."""
+    """Invocation history over MCPFunctionCall rows (compatibility view).
+
+    Filters are pushed into the underlying repo query so that ``total`` and
+    ``pages`` reflect the *filtered* result set. Doing the filter in Python
+    after the repo already paginated would report an inflated ``total`` and
+    silently shrink each page.
+    """
     partition_key = info.context["partition_key"]
-    tool_filter = kwargs.get("tool_name")
-    status_filter = kwargs.get("status")
     page_number = kwargs.get("page_number") or 1
     limit = kwargs.get("limit") or 10
 
+    list_kwargs: Dict[str, Any] = {
+        "limit": limit,
+        "page_number": page_number,
+    }
+    # Field name on the underlying MCPFunctionCall repo is `name`, not
+    # `tool_name` (see MCP_FUNCTION_CALL_LIST in handlers/config.py).
+    if kwargs.get("tool_name"):
+        list_kwargs["name"] = kwargs["tool_name"]
+    if kwargs.get("status"):
+        list_kwargs["status"] = kwargs["status"]
+
     try:
-        repo = get_repo("mcp_function_call")
-        result = repo.list(_info_stub(partition_key), limit=limit, page_number=page_number)
+        result = get_repo("mcp_function_call").list(
+            _info_stub(partition_key), **list_kwargs
+        )
         raw = getattr(result, "mcp_function_call_list", None) or []
         total = getattr(result, "total", None) or len(raw)
     except Exception:
         raw, total = [], 0
 
-    rows = []
-    for fc in raw:
-        view = _invocation_view_dict(fc)
-        if view is None:
-            continue
-        if tool_filter and view["tool_name"] != tool_filter:
-            continue
-        if status_filter and view["status"] != status_filter:
-            continue
-        rows.append(view)
+    rows = [v for v in (_invocation_view_dict(fc) for fc in raw) if v]
 
     pages = max(1, (int(total or 0) + int(limit) - 1) // int(limit))
     return CapabilityMcpInvocationConnectionType(
