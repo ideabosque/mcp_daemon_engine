@@ -355,6 +355,25 @@ class Config:
             setting.get("enable_s3_package_upload", True)
         )
 
+        # --- Capability Engine compatibility: built-in module list ---
+        # Deploy-time classification: module names listed here resolve as
+        # BUILTIN in the capability compatibility read views. Accepts a
+        # list (from settings) or a comma-separated string (from env).
+        builtin_raw = setting.get("builtin_modules") or setting.get(
+            "BUILTIN_MCP_MODULES"
+        )
+        if isinstance(builtin_raw, str):
+            builtin_modules = [
+                m.strip() for m in builtin_raw.split(",") if m.strip()
+            ]
+        elif isinstance(builtin_raw, (list, tuple)):
+            builtin_modules = [m for m in builtin_raw if m]
+        else:
+            builtin_modules = []
+        # Persist into the setting dict so read views (and the gateway's
+        # env forwarding) see the canonical list form.
+        cls.setting["builtin_modules"] = builtin_modules
+
     @classmethod
     def _setup_function_paths(cls, setting: Dict[str, Any]) -> None:
         cls.funct_bucket_name = setting.get("funct_bucket_name")

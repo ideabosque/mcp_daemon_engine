@@ -7,8 +7,19 @@ __author__ = "bibow"
 import time
 from typing import Any, Dict
 
-from graphene import Boolean, DateTime, Field, Int, ObjectType, ResolveInfo, String
+from graphene import Boolean, DateTime, Field, ID, Int, ObjectType, ResolveInfo, String
 
+from .mutations.capability_mcp import (
+    CheckCapabilityCustomMcpGitPackageVersion,
+    GenerateCapabilityCustomMcpUploadUrl,
+    InvokeCapabilityMcpTool,
+    RegisterCapabilityCustomMcpGitPackage,
+    RegisterCapabilityCustomMcpPackage,
+    RegisterCapabilityCustomMcpPackageBase64,
+    RegisterCapabilityRemoteMcp,
+    RefreshCapabilityCustomMcpGitPackage,
+    TestCapabilityMcpTool,
+)
 from .mutations.mcp_configuration import LoadMcpConfiguration
 from .mutations.mcp_external import SyncExternalMcpServer
 from .mutations.mcp_function import DeleteMcpFunction, InsertUpdateMcpFunction
@@ -27,6 +38,15 @@ from .mutations.mcp_upload import (
     GenerateMcpPackageUploadUrl,
     ProcessMcpPackage,
 )
+from .queries.capability_mcp import (
+    resolve_capability_mcp_invocation_list,
+    resolve_capability_mcp_provider,
+    resolve_capability_mcp_provider_list,
+    resolve_capability_mcp_server,
+    resolve_capability_mcp_server_tools,
+    resolve_capability_mcp_tool,
+    resolve_capability_mcp_tool_list,
+)
 from .queries.mcp_function import resolve_mcp_function, resolve_mcp_function_list
 from .queries.mcp_function_call import (
     resolve_mcp_function_call,
@@ -34,6 +54,15 @@ from .queries.mcp_function_call import (
 )
 from .queries.mcp_module import resolve_mcp_module, resolve_mcp_module_list
 from .queries.mcp_setting import resolve_mcp_setting, resolve_mcp_setting_list
+from .types.capability_mcp import (
+    CapabilityMcpInvocation,
+    CapabilityMcpInvocationConnection,
+    CapabilityMcpProvider,
+    CapabilityMcpProviderConnection,
+    CapabilityMcpTool,
+    CapabilityMcpToolConnection,
+    CapabilityMcpTransport,
+)
 from .types.mcp_function import MCPFunctionListType, MCPFunctionType
 from .types.mcp_function_call import MCPFunctionCallListType, MCPFunctionCallType
 from .types.mcp_module import MCPModuleListType, MCPModuleType
@@ -52,6 +81,13 @@ def type_class():
         MCPSettingType,
         MCPSettingListType,
         McpConfigurationStats,
+        CapabilityMcpProvider,
+        CapabilityMcpProviderConnection,
+        CapabilityMcpTool,
+        CapabilityMcpToolConnection,
+        CapabilityMcpTransport,
+        CapabilityMcpInvocation,
+        CapabilityMcpInvocationConnection,
     ]
 
 
@@ -162,6 +198,92 @@ class Query(ObjectType):
     ) -> MCPSettingListType:
         return resolve_mcp_setting_list(info, **kwargs)
 
+    # ------------------------------------------------------------------
+    # Capability Engine MCP compatibility queries
+    # ------------------------------------------------------------------
+    capability_mcp_provider = Field(
+        CapabilityMcpProvider,
+        id=ID(required=True),
+    )
+
+    capability_mcp_provider_list = Field(
+        CapabilityMcpProviderConnection,
+        page_number=Int(required=False),
+        limit=Int(required=False),
+        transport=CapabilityMcpTransport(required=False),
+        status=String(required=False),
+        keyword=String(required=False),
+    )
+
+    capability_mcp_server = Field(
+        CapabilityMcpProvider,
+        id=ID(required=True),
+    )
+
+    capability_mcp_server_tools = Field(
+        CapabilityMcpToolConnection,
+        id=ID(required=True),
+        page_number=Int(required=False),
+        limit=Int(required=False),
+    )
+
+    capability_mcp_tool = Field(
+        CapabilityMcpTool,
+        id=ID(required=True),
+    )
+
+    capability_mcp_tool_list = Field(
+        CapabilityMcpToolConnection,
+        page_number=Int(required=False),
+        limit=Int(required=False),
+        provider_id=ID(required=False),
+        status=String(required=False),
+        keyword=String(required=False),
+    )
+
+    capability_mcp_invocation_list = Field(
+        CapabilityMcpInvocationConnection,
+        page_number=Int(required=False),
+        limit=Int(required=False),
+        tool_name=String(required=False),
+        status=String(required=False),
+    )
+
+    def resolve_capability_mcp_provider(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_provider(info, **kwargs)
+
+    def resolve_capability_mcp_provider_list(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_provider_list(info, **kwargs)
+
+    def resolve_capability_mcp_server(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_server(info, **kwargs)
+
+    def resolve_capability_mcp_server_tools(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_server_tools(info, **kwargs)
+
+    def resolve_capability_mcp_tool(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_tool(info, **kwargs)
+
+    def resolve_capability_mcp_tool_list(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_tool_list(info, **kwargs)
+
+    def resolve_capability_mcp_invocation_list(
+        self, info: ResolveInfo, **kwargs: Dict[str, Any]
+    ):
+        return resolve_capability_mcp_invocation_list(info, **kwargs)
+
 
 class Mutations(ObjectType):
     load_mcp_configuration = LoadMcpConfiguration.Field()
@@ -171,6 +293,30 @@ class Mutations(ObjectType):
     install_mcp_package_from_git = InstallMcpPackageFromGit.Field()
     check_mcp_git_package_version = CheckMcpGitPackageVersion.Field()
     refresh_mcp_git_package = RefreshMcpGitPackage.Field()
+    # ------------------------------------------------------------------
+    # Capability Engine MCP compatibility mutations
+    # ------------------------------------------------------------------
+    register_capability_remote_mcp = RegisterCapabilityRemoteMcp.Field()
+    generate_capability_custom_mcp_upload_url = (
+        GenerateCapabilityCustomMcpUploadUrl.Field()
+    )
+    register_capability_custom_mcp_package = (
+        RegisterCapabilityCustomMcpPackage.Field()
+    )
+    register_capability_custom_mcp_package_base64 = (
+        RegisterCapabilityCustomMcpPackageBase64.Field()
+    )
+    register_capability_custom_mcp_git_package = (
+        RegisterCapabilityCustomMcpGitPackage.Field()
+    )
+    refresh_capability_custom_mcp_git_package = (
+        RefreshCapabilityCustomMcpGitPackage.Field()
+    )
+    check_capability_custom_mcp_git_package_version = (
+        CheckCapabilityCustomMcpGitPackageVersion.Field()
+    )
+    invoke_capability_mcp_tool = InvokeCapabilityMcpTool.Field()
+    test_capability_mcp_tool = TestCapabilityMcpTool.Field()
     insert_update_mcp_function = InsertUpdateMcpFunction.Field()
     delete_mcp_function = DeleteMcpFunction.Field()
     insert_update_mcp_function_call = InsertUpdateMcpFunctionCall.Field()

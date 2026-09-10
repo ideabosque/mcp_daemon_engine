@@ -1,7 +1,7 @@
 # Capability Engine MCP Integration Plan
 
-> Status: Draft
-> Document version: 0.2
+> Status: Phases 1–3 implemented on `feature/integrate-capability-engine` (compatibility read views, registration mutations, invocation adapter, `builtin_modules` config parsing). Phase 4 (Banyanos cutover) and Phase 5 (cleanup) pending.
+> Document version: 0.3
 > Last updated: 2026-09-09
 > Owner: mcp-daemon-engine
 
@@ -53,9 +53,11 @@ The capability engine GraphQL surface is broader than MCP management. The replac
 | Custom MCP (uploaded ZIP) | Internal MCP backed by S3-hosted package | `"s3"` | `generateMcpPackageUploadUrl` → S3 PUT → `processMcpPackage`, or the Base64 shortcut via `loadMcpConfiguration(packageBase64: ...)` (gated by `Config.enable_s3_package_upload`). |
 | Custom MCP (Git-installed) | Internal MCP backed by a Git repo | `"git"` | `installMcpPackageFromGit` in `handlers/mcp_git.py` clones, pip-installs, loads the manifest, and writes rows with `MCPSetting.setting.git_url`, resolved commit, and optional TTL. `checkMcpGitPackageVersion` and `refreshMcpGitPackage` maintain freshness. |
 | Custom MCP provider | Uploaded/Git-installed MCP module/package | `"s3"` or `"git"` | `MCPModule.package_name`, `MCPModule.module_name`, `MCPSetting.setting`, and module `classes`. |
-| Built-in tool | System MCP module serving the platform | Reserved: `"builtin"` | Preload or install packages such as `mcp_a2a_proxy` as normal daemon MCP modules. Convention not yet in code — see §10. |
+| Built-in tool | System MCP module serving the platform | Whatever install path was used (`"s3"` / `"git"` / `""` for in-image) | Install through any normal path, then declare the module name in the deployment config `builtin_modules` list (see §10). No storage marker, no promotion mutation. |
 | Tool | MCP function with `mcp_type = "tool"` | n/a | `MCPFunction.name`, `description`, `data.inputSchema`, module/class/function link fields, `status` (`0` = disabled, `1` = enabled per migration 0005). |
 | Runtime log/invocation | MCP function call | n/a | `MCPFunctionCall` plus existing `execute_decorator()` audit updates. |
+
+**Key idea**: `MCPModule.source` describes the *install/transport origin* (external HTTP, S3, Git, or locally-present). Built-in status is *orthogonal* and lives **only in deployment configuration** — `Config.setting["builtin_modules"]`, a list of module names. Compatibility read views resolve `BUILTIN` by membership in that list at query time; nothing is written to storage. Ops controls the classification through env/config at deploy time, not through the runtime API.
 
 ## 5. Proposed Additive GraphQL Layer
 
@@ -129,12 +131,10 @@ extend type Query {
 Implementation:
 
 - `id` resolves to daemon `MCPModule.module_name` for provider/server views.
-- Transport mapping is derived from `MCPModule.source`:
-  - `"external"` → `REMOTE` (read `MCPSetting.setting.base_url` / `bearer_token` / `headers` / `name_prefix` / `timeout`).
-  - `"s3"` → `CUSTOM` (uploaded ZIP, endpoint URI `s3://{funct_bucket_name}/{package_name}.zip`).
-  - `"git"` → `CUSTOM` (Git-installed; endpoint URI = `MCPSetting.setting.git_url` with `@` and the resolved commit if present).
-  - `"builtin"` (reserved, see §10) → `BUILTIN`.
-  - Anything else (empty, custom value) → `CUSTOM` with `endpoint` = `null`; document `config.source_raw` for troubleshooting.
+- Transport mapping — the deployment-config check comes first because it can promote a row that would otherwise be `CUSTOM`:
+  1. If `module_name in Config.setting["builtin_modules"]` (a list configured at deploy time; see §10) → `BUILTIN` (endpoint `builtin://{module_name}`).
+  2. Else if `MCPModule.source == "external"` → `REMOTE` (read `MCPSetting.setting.base_url` / `bearer_token` / `headers` / `name_prefix` / `timeout`).
+  3. Else → `CUSTOM`. Endpoint URI depends on `source`: `s3://{funct_bucket_name}/{package_name}.zip` for `"s3"`; `MCPSetting.setting.git_url` (with `@{commit}` appended when resolved) for `"git"`; `null` with `config.source_raw` set for anything else.
 - `toolCount` counts `MCPFunction` rows with `mcp_type == "tool"`, `status != 0`, and matching `module_name`.
 
 ### 6.2 Tool Views
@@ -287,26 +287,17 @@ Implementation:
 - `checkCapabilityCustomMcpGitPackageVersion` delegates to `check_mcp_git_package_version()` — reports installed vs. upstream commit without installing.
 - If the git URL requires auth, the daemon reads credentials from its environment (`GIT_SSH_COMMAND`, PAT env vars) — do not accept credentials through this mutation.
 
-### 7.4 Built-In MCP Module Registration
+### 7.4 Built-In Classification (No Runtime Mutation)
 
-```graphql
-extend type Mutation {
-    registerCapabilityBuiltinMcpModule(
-        moduleName: String!
-        packageName: String
-        displayName: String
-        description: String
-        mcpConfiguration: JSONCamelCase!
-        updatedBy: String!
-    ): CapabilityMcpRegistrationPayload
-}
-```
+There is intentionally **no** built-in-specific registration mutation. A module becomes `BUILTIN` in the read view solely by appearing in the deployment-config list `Config.setting["builtin_modules"]` (see §10). To register a system-wide package (e.g. `mcp_a2a_proxy`):
 
-Implementation:
+1. Install it through the normal path that matches how it ships:
+   - Git-installed → §7.3 `registerCapabilityCustomMcpGitPackage`.
+   - S3-uploaded → §7.2 `registerCapabilityCustomMcpPackage` / Base64 variant.
+   - Baked into the daemon image with an inline manifest → existing `loadMcpConfiguration(mcpConfiguration: ...)` (with `validate_manifest()` added for safety).
+2. Ensure the module name is in `builtin_modules` in the deployment config for that environment.
 
-- Wrap `load_mcp_configuration_into_models()` with `source="builtin"` or an equivalent reserved setting marker.
-- Use this for system-wide packages like `mcp_a2a_proxy`.
-- Require the manifest to pass `validate_manifest()` before persistence. Existing `loadMcpConfiguration(mcpConfiguration: ...)` does not currently validate inline manifests, so the compatibility mutation should explicitly validate.
+Compatibility read views resolve `BUILTIN` by membership in the config list at query time — no storage write, no promotion step, no demotion mutation. Removing the module name from the config (and redeploying/hot-reloading) is the demotion path.
 
 ### 7.5 Tool Invocation
 
@@ -345,8 +336,8 @@ The mutation should not reimplement Banyanos authorization, rate limiting, or ci
 | `name`, `server_name` | `MCPModule.module_name` |
 | `display_name` | `MCPSetting.setting.capability_metadata.display_name` or module name |
 | `description` | `MCPSetting.setting.capability_metadata.description` |
-| `endpoint` | External: `MCPSetting.setting.base_url`. Uploaded ZIP: `s3://{funct_bucket_name}/{package_name}.zip`. Git: `MCPSetting.setting.git_url` (with `@{commit}` appended when resolved). Built-in: `builtin://{module_name}`. |
-| `transport` | Derived from `MCPModule.source`: `"external"` → `REMOTE`, `"s3"`/`"git"` → `CUSTOM`, `"builtin"` → `BUILTIN`, other → `CUSTOM` with `config.source_raw` for troubleshooting. |
+| `endpoint` | Built-in (in `Config.setting["builtin_modules"]`): `builtin://{module_name}`. Otherwise: `MCPSetting.setting.base_url` for external; `s3://{funct_bucket_name}/{package_name}.zip` for `source="s3"`; `MCPSetting.setting.git_url` (with `@{commit}` appended when resolved) for `source="git"`; `null` otherwise. |
+| `transport` | `BUILTIN` when `module_name in Config.setting["builtin_modules"]`. Else `REMOTE` when `MCPModule.source == "external"`. Else `CUSTOM` (with `config.source_raw` echoing the raw source value for troubleshooting). |
 | `auth_type` | `BEARER` when `bearer_token` exists, else `NONE`; future OAuth/API key stays inside setting headers/secrets. |
 | `protocol_version` | `MCPSetting.setting.protocol_version` or daemon default. |
 | `config.timeout` | `MCPSetting.setting.timeout` (seconds) — forwarded to `MCPHttpClient` in both sync and proxy paths since commit `533251f`. |
@@ -400,7 +391,7 @@ The mutation should not reimplement Banyanos authorization, rate limiting, or ci
 - Add remote MCP registration wrapper around `sync_external_mcp_server()`.
 - Add custom MCP upload wrappers around `generate_upload_url()`, `process_mcp_package()`, and `process_base64_package()` (respecting the `enable_s3_package_upload` gate).
 - Add custom MCP Git wrappers around `install_mcp_package_from_git()`, `refresh_mcp_git_package()`, and `check_mcp_git_package_version()`.
-- Add built-in module registration wrapper around manifest validation plus model load. Introduce the `source="builtin"` convention here.
+- Wire the deployment-config `builtin_modules` list into `Config.setting` (parse the env var, default to empty list). Compatibility read views check this list at query time — no separate built-in registration mutation is added.
 - Ensure all successful registration paths clear and warm the partition MCP configuration cache (they already do internally; the compatibility wrappers must not skip that step).
 
 ### Phase 3: Invocation Adapter
@@ -430,7 +421,9 @@ The mutation should not reimplement Banyanos authorization, rate limiting, or ci
 - **Preserve header keys on the read path too.** `JSONSnakeCase.serialize` recursively snake-cases nested dict keys, which mangles HTTP header names like `Part-Id` → `part_id` when the daemon later forwards them upstream. `Config._fetch_modules_and_settings` restores `setting["headers"]` verbatim after serialization (commit `bc0b3d4`). Compatibility read resolvers that return module settings must do the same for `headers` and any other verbatim sub-dicts, or downstream re-writes will re-introduce the bug.
 - Use `JSONCamelCase` for manifest/tool schemas, matching existing daemon manifest handling.
 - Prefer `module_name` as the stable server/provider identifier for new daemon-managed records. If Banyanos UUID continuity is required, store old IDs under `MCPSetting.setting.capability_metadata.legacy_ids`.
-- Built-in modules need a clear convention. Recommended: `source="builtin"` plus `MCPSetting.setting.capability_transport="BUILTIN"`. This value is not yet in code — introduce it in Phase 2 alongside the built-in registration mutation.
+- Built-in status is a **deployment-configuration** concern, not a storage or mutation concern. `MCPModule.source` continues to describe the install/transport origin only (`"external"`, `"s3"`, `"git"`, or empty when the code is baked into the daemon image). A module is built-in **only when** its `module_name` appears in `Config.setting["builtin_modules"]` — a list read from environment/config at daemon startup (env var e.g. `BUILTIN_MCP_MODULES=mcp_a2a_proxy,mcp_platform_health`, parsed comma-separated into a list on `Config.setting`). Compatibility read-view resolvers check this list first; if absent the module falls back to `CUSTOM` (or `REMOTE` for `source="external"`).
+- **Why config, not mutation**: (1) ops has authoritative, deploy-time control — no runtime API surface to abuse; (2) reproducible across fresh environments; (3) demotion is a config edit + redeploy, no cleanup mutation needed; (4) no storage marker to keep in sync with the config, so migration-safe by construction. Trade-off: promoting a module mid-cycle requires a config change (env update + hot-reload of `Config.setting`, or a restart). Acceptable for platform-scoped built-ins that don't change often.
+- Do NOT write `source="builtin"` or any `capability_transport` marker to storage — no daemon code path recognizes them, and they'd desynchronize from the config list.
 - The Base64 upload branch of `LoadMcpConfiguration.mutate` is gated on `Config.enable_s3_package_upload`. Compatibility mutations that wrap that branch must decide whether to inherit the gate (surface as `ok: false` with a clear disabled message) or bypass it; document the choice in the resolver.
 - Per-server request timeouts (`MCPSetting.setting.timeout`, integer seconds) are forwarded to `MCPHttpClient` in both sync and proxy paths (commit `533251f`). Expose it as `config.timeout` in the provider view and accept it as an optional argument on `registerCapabilityRemoteMcp` when adding a follow-up mutation.
 - `MCPFunctionCall.content` may be inlined text or an S3 reference depending on payload size — invocation view resolvers should handle both shapes without materializing large S3-hosted content unless explicitly requested.
@@ -442,7 +435,7 @@ The mutation should not reimplement Banyanos authorization, rate limiting, or ci
 | Banyanos uses UUID IDs, while daemon modules are name-keyed. | Use `module_name` as new ID. Add `legacy_ids` metadata only if old clients require it. |
 | Banyanos invocation has authorization/rate/circuit behavior not present in daemon compatibility layer. | Keep governance outside daemon for first cutover. Migrate policy concerns separately. |
 | Existing daemon inline manifest load skips validation. | Compatibility built-in/custom manifest paths should call `validate_manifest()` before persistence. |
-| Built-in module source convention is not yet formalized. | Reserve `source="builtin"` in docs and implementation, without changing existing model columns. |
+| Built-in module classification convention is not yet formalized. | Deploy-time configuration only: `Config.setting["builtin_modules"]` (a list of module names, parsed from an env var like `BUILTIN_MCP_MODULES`). Compatibility read views check membership at query time. No storage marker, no runtime mutation. `MCPModule.source` stays describing install origin only. Any module not in the list defaults to `CUSTOM` (or `REMOTE` when `source="external"`). |
 | Tool disable/delete semantics differ. | Map capability `UNAVAILABLE` to `MCPFunction.status=0`; avoid hard deletes during migration. |
 | Historical runtime logs live in capability tables. | Do not migrate logs initially. Expose daemon `MCPFunctionCall` for new invocations and keep old history read-only in Banyanos if needed. |
 | Custom MCP now has two registration paths (`s3`, `git`) with different failure/refresh semantics. | Model them as sibling mutations under `CUSTOM` transport, both returning the same `CapabilityMcpRegistrationPayload`. Distinguish them only in `config.source_raw` on the read view. |

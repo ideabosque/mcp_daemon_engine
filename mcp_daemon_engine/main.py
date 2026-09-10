@@ -100,6 +100,42 @@ def deploy() -> List:
                             "action": "refreshMcpGitPackage",
                             "label": "Refresh MCP Git Package",
                         },
+                        {
+                            "action": "registerCapabilityRemoteMcp",
+                            "label": "Register Capability Remote MCP",
+                        },
+                        {
+                            "action": "generateCapabilityCustomMcpUploadUrl",
+                            "label": "Generate Capability Custom MCP Upload URL",
+                        },
+                        {
+                            "action": "registerCapabilityCustomMcpPackage",
+                            "label": "Register Capability Custom MCP Package",
+                        },
+                        {
+                            "action": "registerCapabilityCustomMcpPackageBase64",
+                            "label": "Register Capability Custom MCP Package Base64",
+                        },
+                        {
+                            "action": "registerCapabilityCustomMcpGitPackage",
+                            "label": "Register Capability Custom MCP Git Package",
+                        },
+                        {
+                            "action": "refreshCapabilityCustomMcpGitPackage",
+                            "label": "Refresh Capability Custom MCP Git Package",
+                        },
+                        {
+                            "action": "checkCapabilityCustomMcpGitPackageVersion",
+                            "label": "Check Capability Custom MCP Git Package Version",
+                        },
+                        {
+                            "action": "invokeCapabilityMcpTool",
+                            "label": "Invoke Capability MCP Tool",
+                        },
+                        {
+                            "action": "testCapabilityMcpTool",
+                            "label": "Test Capability MCP Tool",
+                        },
                     ],
                     "type": "RequestResponse",
                     "support_methods": ["POST"],
@@ -418,6 +454,13 @@ _CONFIG_MUTATIONS = {
     "installMcpPackageFromGit",
     "checkMcpGitPackageVersion",
     "refreshMcpGitPackage",
+    "registerCapabilityRemoteMcp",
+    "generateCapabilityCustomMcpUploadUrl",
+    "registerCapabilityCustomMcpPackage",
+    "registerCapabilityCustomMcpPackageBase64",
+    "registerCapabilityCustomMcpGitPackage",
+    "refreshCapabilityCustomMcpGitPackage",
+    "checkCapabilityCustomMcpGitPackageVersion",
 }
 
 
