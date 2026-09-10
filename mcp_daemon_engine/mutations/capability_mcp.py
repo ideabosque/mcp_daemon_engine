@@ -94,8 +94,38 @@ def _store_capability_metadata(
         return
     try:
         setting = _module_setting(partition_key, module_name)
+
+        # setting_id is the MCPSetting row's range key — it's NOT inside
+        # the setting JSON dict. Read it from the module's cached
+        # configuration: the module's classes[0].setting_id, or from the
+        # module row's classes list via the repository.
         setting_id = setting.get("setting_id")
         if not setting_id:
+            # Fall back: read the MCPModule row and extract setting_id
+            # from classes[0].
+            try:
+                module_row = get_repo("mcp_module").get(
+                    partition_key=partition_key, module_name=module_name
+                )
+                if module_row and isinstance(module_row, dict):
+                    classes = module_row.get("classes") or []
+                    if classes and isinstance(classes, list):
+                        first = classes[0]
+                        if isinstance(first, dict):
+                            setting_id = first.get("setting_id")
+                        elif hasattr(first, "setting_id"):
+                            setting_id = first.setting_id
+                        elif hasattr(first, "as_dict"):
+                            setting_id = first.as_dict().get("setting_id")
+            except Exception:
+                pass
+
+        if not setting_id:
+            if info.context.get("logger"):
+                info.context["logger"].warning(
+                    f"Cannot store capability metadata for '{module_name}': "
+                    f"no setting_id found"
+                )
             return
         metadata = dict(setting.get("capability_metadata") or {})
         if display_name:

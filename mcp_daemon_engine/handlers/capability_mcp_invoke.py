@@ -115,12 +115,24 @@ def invoke_capability_tool(
     result_payload: Any = None
 
     try:
-        content_items = execute_tool_function(
-            partition_key,
-            name,
-            call_args,
-            mcp_function_call_uuid=invocation_uuid,
-        )
+        # execute_tool_function may internally call async code (e.g.
+        # ExternalMCPProxy uses MCPHttpClient which is async). When called
+        # from a sync GraphQL resolver inside uvicorn's running event loop,
+        # Invoker.sync_call_async_compatible fails with "no running event
+        # loop" / "already running" conflicts. Dispatch in a separate
+        # thread so the async code gets its own clean event loop — same
+        # pattern as async_execute_tool_function in mcp_utility.py.
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                execute_tool_function,
+                partition_key,
+                name,
+                call_args,
+                mcp_function_call_uuid=invocation_uuid,
+            )
+            content_items = future.result(timeout=300)
 
         # Normalize the MCP content list into a payload dict.
         payload_items = []
